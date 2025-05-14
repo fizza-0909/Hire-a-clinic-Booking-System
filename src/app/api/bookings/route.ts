@@ -17,30 +17,45 @@ export async function GET(req: Request) {
         // Connect to database
         const { db } = await connectToDatabase();
 
-        // Get user's bookings
+        // Get user's bookings with payment status
         const bookings = await db.collection('bookings')
             .find({
-                userId: session.user.id,
-                status: { $in: ['pending', 'confirmed'] }
+                userId: session.user.id
             })
             .sort({ createdAt: -1 })
             .toArray();
 
-        // Group bookings by roomId and date
+        // Group bookings by roomId and payment intent
         const groupedBookings = bookings.reduce((acc: any[], booking) => {
             const existingBooking = acc.find(b =>
                 b.roomId === booking.roomId &&
                 b.timeSlot === booking.timeSlot &&
-                b.status === booking.status &&
-                b.paymentDetails.paymentIntentId === booking.paymentDetails.paymentIntentId
+                b.paymentDetails?.paymentIntentId === booking.paymentDetails?.paymentIntentId
             );
 
+            // Format the creation date
+            const createdDate = booking.createdAt ? new Date(booking.createdAt).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) : 'Date not available';
+
             if (existingBooking) {
-                existingBooking.dates.push(booking.date);
+                existingBooking.dates = [...(existingBooking.dates || []), booking.date].sort();
             } else {
+                // Determine the real payment status
+                const paymentStatus = booking.paymentDetails?.status;
+                const bookingStatus = paymentStatus === 'succeeded' ? 'confirmed' : 'pending';
+
                 acc.push({
                     ...booking,
-                    dates: [booking.date]
+                    dates: [booking.date],
+                    status: bookingStatus,
+                    createdAt: createdDate,
+                    paymentStatus: paymentStatus
                 });
             }
             return acc;

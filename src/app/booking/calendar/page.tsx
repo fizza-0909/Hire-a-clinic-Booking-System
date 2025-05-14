@@ -102,15 +102,15 @@ const CalendarPage: React.FC = () => {
                 try {
                     const roomId = room.id.toString();
                     const response = await fetch('/api/bookings/status', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        month: currentMonth.getMonth() + 1,
-                        year: currentMonth.getFullYear(),
-                        roomId
-                    }),
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            month: currentMonth.getMonth() + 1,
+                            year: currentMonth.getFullYear(),
+                            roomId
+                        }),
                     });
 
                     if (!response.ok) {
@@ -163,51 +163,108 @@ const CalendarPage: React.FC = () => {
         const normalizedDate = new Date(date);
         normalizedDate.setHours(12, 0, 0, 0);
 
-        // Format date in local timezone without any UTC conversion
-        const year = normalizedDate.getFullYear();
-        const month = String(normalizedDate.getMonth() + 1).padStart(2, '0');
-        const day = String(normalizedDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-
         const room = selectedRooms.find(r => r.id === roomId);
         if (!room) return;
 
-        // Check if the slot is available
-        if (!isTimeSlotAvailable(normalizedDate, roomId, room.timeSlot)) {
-            if (room.timeSlot === 'full') {
-                toast.error('This date is not available for full day booking');
-            } else {
-                toast.error(`This ${room.timeSlot} slot is already booked`);
-            }
-            return;
-        }
+        // Handle monthly booking differently
+        if (bookingType === 'monthly') {
+            // Clear any existing dates for this room
+            setSelectedRooms(prev =>
+                prev.map(r => {
+                    if (r.id === roomId) {
+                        return { ...r, dates: [] };
+                    }
+                    return r;
+                })
+            );
 
-        // Check if the date is already selected
-        const dateIndex = room.dates?.indexOf(dateStr) ?? -1;
-        if (dateIndex === -1) {
-            // Adding new date
+            // Generate array of dates until we get 30 available days
+            const dates: string[] = [];
+            let currentDate = new Date(normalizedDate);
+            let daysChecked = 0;
+            const maxDaysToCheck = 60; // Maximum days to look ahead to prevent infinite loop
+
+            while (dates.length < 30 && daysChecked < maxDaysToCheck) {
+                // Skip weekends
+                if (!isWeekend(currentDate)) {
+                    // Check if the slot is available
+                    if (isTimeSlotAvailable(currentDate, roomId, room.timeSlot)) {
+                        // Format date string
+                        const year = currentDate.getFullYear();
+                        const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(currentDate.getDate()).padStart(2, '0');
+                        dates.push(`${year}-${month}-${day}`);
+                    }
+                }
+
+                // Move to next day
+                currentDate.setDate(currentDate.getDate() + 1);
+                daysChecked++;
+            }
+
+            if (dates.length === 0) {
+                toast.error('No available dates found starting from the selected date');
+                return;
+            }
+
+            if (dates.length < 30) {
+                toast.warning(`Only ${dates.length} available days found within the next ${maxDaysToCheck} days`);
+            }
+
+            // Update selected rooms with available dates
             setSelectedRooms(prev =>
                 prev.map(r => {
                     if (r.id === roomId) {
-                        const newDates = [...(r.dates || []), dateStr];
-                        return { ...r, dates: newDates };
+                        return { ...r, dates };
                     }
                     return r;
                 })
             );
-            toast.success(`Selected ${room.timeSlot} slot for ${formatDisplayDate(dateStr)}`);
-                        } else {
-                            // Removing date
-            setSelectedRooms(prev =>
-                prev.map(r => {
-                    if (r.id === roomId) {
-                        const newDates = r.dates?.filter(d => d !== dateStr) || [];
-                        return { ...r, dates: newDates };
-                    }
-                    return r;
-                })
-            );
-            toast.success(`Removed ${room.timeSlot} slot for ${formatDisplayDate(dateStr)}`);
+            toast.success(`Selected ${dates.length} days starting from ${formatDisplayDate(dates[0])}`);
+        } else {
+            // Original daily booking logic
+            const year = normalizedDate.getFullYear();
+            const month = String(normalizedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(normalizedDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+
+            // Check if the slot is available
+            if (!isTimeSlotAvailable(normalizedDate, roomId, room.timeSlot)) {
+                if (room.timeSlot === 'full') {
+                    toast.error('This date is not available for full day booking');
+                } else {
+                    toast.error(`This ${room.timeSlot} slot is already booked`);
+                }
+                return;
+            }
+
+            // Check if the date is already selected
+            const dateIndex = room.dates?.indexOf(dateStr) ?? -1;
+            if (dateIndex === -1) {
+                // Adding new date
+                setSelectedRooms(prev =>
+                    prev.map(r => {
+                        if (r.id === roomId) {
+                            const newDates = [...(r.dates || []), dateStr];
+                            return { ...r, dates: newDates };
+                        }
+                        return r;
+                    })
+                );
+                toast.success(`Selected ${room.timeSlot} slot for ${formatDisplayDate(dateStr)}`);
+            } else {
+                // Removing date
+                setSelectedRooms(prev =>
+                    prev.map(r => {
+                        if (r.id === roomId) {
+                            const newDates = r.dates?.filter(d => d !== dateStr) || [];
+                            return { ...r, dates: newDates };
+                        }
+                        return r;
+                    })
+                );
+                toast.success(`Removed ${room.timeSlot} slot for ${formatDisplayDate(dateStr)}`);
+            }
         }
 
         // Save to sessionStorage
@@ -265,14 +322,14 @@ const CalendarPage: React.FC = () => {
                 );
             } else {
                 // No dates are compatible
-            toast.error(
-                <div>
-                    <p>Cannot switch to {timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening'} slot.</p>
-                    <p className="text-sm mt-1">Please unselect these dates first: {formattedDates}</p>
-                </div>,
-                { duration: 5000 }
-            );
-            return;
+                toast.error(
+                    <div>
+                        <p>Cannot switch to {timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening'} slot.</p>
+                        <p className="text-sm mt-1">Please unselect these dates first: {formattedDates}</p>
+                    </div>,
+                    { duration: 5000 }
+                );
+                return;
             }
         }
 
@@ -307,42 +364,42 @@ const CalendarPage: React.FC = () => {
         if (!date) return false;
 
         try {
-        const dateStr = date.toISOString().split('T')[0];
+            const dateStr = date.toISOString().split('T')[0];
             const roomIdStr = roomId.toString();
 
             // Ensure bookingStatus is an array and contains valid entries
             if (!Array.isArray(bookingStatus)) return true;
 
-        const status = bookingStatus.find(b =>
+            const status = bookingStatus.find(b =>
                 b &&
                 typeof b === 'object' &&
                 'date' in b &&
                 'roomId' in b &&
-            b.date === dateStr &&
+                b.date === dateStr &&
                 b.roomId === roomIdStr
-        );
+            );
 
             if (!status || !Array.isArray(status.timeSlots)) return true;
 
-        // If full day is booked, no slots are available
-        if (status.timeSlots.includes('full')) return false;
+            // If full day is booked, no slots are available
+            if (status.timeSlots.includes('full')) return false;
 
-        switch (timeSlot) {
-            case 'full':
-                // For full day booking, both morning and evening must be free
-                return !status.timeSlots.includes('morning') && !status.timeSlots.includes('evening');
-            case 'morning':
-                // For morning booking, only morning slot must be free
-                return !status.timeSlots.includes('morning') && !status.timeSlots.includes('full');
-            case 'evening':
-                // For evening booking, only evening slot must be free
-                return !status.timeSlots.includes('evening') && !status.timeSlots.includes('full');
-            default:
+            switch (timeSlot) {
+                case 'full':
+                    // For full day booking, both morning and evening must be free
+                    return !status.timeSlots.includes('morning') && !status.timeSlots.includes('evening');
+                case 'morning':
+                    // For morning booking, only morning slot must be free
+                    return !status.timeSlots.includes('morning') && !status.timeSlots.includes('full');
+                case 'evening':
+                    // For evening booking, only evening slot must be free
+                    return !status.timeSlots.includes('evening') && !status.timeSlots.includes('full');
+                default:
                     return false;
             }
         } catch (error) {
             console.error('Error checking time slot availability:', error);
-                return false;
+            return false;
         }
     };
 
@@ -675,7 +732,7 @@ const CalendarPage: React.FC = () => {
     if (status === 'loading') {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
             </div>
         );
     }

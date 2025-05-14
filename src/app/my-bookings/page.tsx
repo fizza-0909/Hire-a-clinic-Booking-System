@@ -16,8 +16,12 @@ interface Booking {
     paymentDetails: {
         status: string;
         createdAt: string;
+        paymentIntentId?: string;
+        confirmedAt?: string;
+        failureMessage?: string;
     };
     createdAt: string;
+    paymentStatus: string;
 }
 
 const MyBookingsPage = () => {
@@ -76,27 +80,100 @@ const MyBookingsPage = () => {
         }
     };
 
+    const getPaymentStatusText = (status: string | undefined) => {
+        switch (status) {
+            case 'succeeded':
+                return 'Paid';
+            case 'pending':
+                return 'Payment Pending';
+            case 'failed':
+                return 'Payment Failed';
+            default:
+                return 'Payment Information Not Available';
+        }
+    };
+
     const handleViewDetails = (booking: Booking) => {
+        // Base prices
+        const fullDayPrice = 300;
+        const halfDayPrice = 160;
+
+        // Determine base price based on time slot
+        let basePrice;
+        if (booking.timeSlot === 'full') {
+            basePrice = fullDayPrice;
+        } else {
+            // Both morning and evening slots are half-day prices
+            basePrice = halfDayPrice;
+        }
+
+        const subtotal = basePrice * booking.dates.length;
+        const tax = subtotal * 0.035; // 3.5% tax
+
+        // Check if this is the user's first booking
+        const isFirstBooking = bookings.every(b =>
+            new Date(booking.createdAt) <= new Date(b.createdAt)
+        );
+
+        // Only apply security deposit for first booking
+        const securityDeposit = isFirstBooking ? 250 : 0;
+
+        // Round to 2 decimal places
+        const total = Math.round((subtotal + tax + securityDeposit) * 100) / 100;
+
         // Store booking data for confirmation page
-        sessionStorage.setItem('confirmationData', JSON.stringify({
+        const confirmationData = {
             rooms: [{
                 id: parseInt(booking.roomId),
                 name: `Room ${booking.roomId}`,
                 timeSlot: booking.timeSlot,
                 dates: booking.dates
             }],
-            totalAmount: booking.totalAmount,
+            totalAmount: total,
             bookingType: booking.dates.length > 1 ? 'monthly' : 'daily',
             bookingDate: booking.createdAt,
             priceBreakdown: {
-                subtotal: booking.totalAmount * 0.93,
-                tax: booking.totalAmount * 0.035,
-                securityDeposit: 250,
-                total: booking.totalAmount
+                subtotal: subtotal,
+                tax: tax,
+                securityDeposit: securityDeposit,
+                total: total,
+                isFirstBooking: isFirstBooking
             }
-        }));
+        };
 
+        // Store in session storage
+        sessionStorage.setItem('confirmationData', JSON.stringify(confirmationData));
         router.push('/booking/confirmation');
+    };
+
+    // Helper function to calculate total amount
+    const calculateTotalAmount = (booking: Booking): number => {
+        // Base prices
+        const fullDayPrice = 300;
+        const halfDayPrice = 160;
+
+        // Determine base price based on time slot
+        let basePrice;
+        if (booking.timeSlot === 'full') {
+            basePrice = fullDayPrice;
+        } else {
+            // Both morning and evening slots are half-day prices
+            basePrice = halfDayPrice;
+        }
+
+        const subtotal = basePrice * booking.dates.length;
+        const tax = subtotal * 0.035; // 3.5% tax
+
+        // Check if this is the user's first booking by comparing creation dates
+        const isFirstBooking = bookings.every(b =>
+            new Date(booking.createdAt) <= new Date(b.createdAt)
+        );
+
+        // Only apply security deposit for first booking
+        const securityDeposit = isFirstBooking ? 250 : 0;
+
+        // Round to 2 decimal places
+        return Math.round((subtotal + tax + securityDeposit) * 100) / 100;
     };
 
     if (isLoading) {
@@ -134,12 +211,24 @@ const MyBookingsPage = () => {
                                         <div>
                                             <h2 className="text-xl font-semibold text-gray-800">Room {booking.roomId}</h2>
                                             <p className="text-gray-600">{getTimeSlotText(booking.timeSlot)}</p>
+                                            <p className="text-sm text-gray-500 mt-1">Booked on: {booking.createdAt}</p>
+                                            {booking.paymentDetails?.confirmedAt && (
+                                                <p className="text-sm text-green-600 mt-1">
+                                                    Payment confirmed on: {new Date(booking.paymentDetails.confirmedAt).toLocaleString()}
+                                                </p>
+                                            )}
                                         </div>
-                                        <div className={`px-3 py-1 rounded-full text-sm font-medium ${booking.status === 'confirmed'
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-yellow-100 text-yellow-800'
-                                            }`}>
-                                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                                        <div className="flex flex-col items-end">
+                                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${booking.paymentDetails?.status === 'succeeded'
+                                                ? 'bg-green-100 text-green-800'
+                                                : booking.paymentDetails?.status === 'pending'
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : booking.paymentDetails?.status === 'failed'
+                                                        ? 'bg-red-100 text-red-800'
+                                                        : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                {getPaymentStatusText(booking.paymentDetails?.status)}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -159,7 +248,7 @@ const MyBookingsPage = () => {
                                             <div>
                                                 <p className="text-sm text-gray-600">Total Amount:</p>
                                                 <p className="text-lg font-semibold text-blue-600">
-                                                    ${booking.totalAmount.toFixed(2)}
+                                                    ${calculateTotalAmount(booking).toFixed(2)}
                                                 </p>
                                             </div>
                                             <button
