@@ -157,17 +157,34 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            <PaymentElement />
+            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800">Pay securely with</h3>
+                    <div className="flex items-center">
+                        <img
+                            src="/images/stripe-icon.png"
+                            alt="Stripe"
+                            className="h-8 object-contain"
+                            style={{ maxWidth: '100px' }}
+                        />
+                    </div>
+                </div>
+                <PaymentElement />
+            </div>
+
             {error && (
                 <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative">
                     {error}
                 </div>
             )}
+
             <button
                 type="submit"
                 disabled={!stripe || processing}
-                className={`w-full py-3 px-4 rounded-lg text-white font-medium 
-                    ${!stripe || processing ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                className={`w-full py-4 px-6 rounded-lg text-white font-medium text-lg flex items-center justify-center space-x-2
+                    ${!stripe || processing
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-[#635BFF] hover:bg-[#5851EA] transition-colors duration-200'}`}
             >
                 {processing ? (
                     <div className="flex items-center justify-center">
@@ -175,9 +192,26 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
                         Processing...
                     </div>
                 ) : (
-                    `Pay $${priceBreakdown.total.toFixed(2)}`
+                    <>
+                        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M15 9H9V15H15V9Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <span>Pay ${priceBreakdown.total.toFixed(2)} securely with Stripe</span>
+                    </>
                 )}
             </button>
+
+            <div className="text-center text-sm text-gray-500 mt-4">
+                <p>Secure payment powered by Stripe</p>
+                <div className="flex items-center justify-center mt-2 space-x-2">
+                    <svg className="h-4" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" />
+                        <path d="M9 12L11 14L15 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span>Your payment information is secure</span>
+                </div>
+            </div>
         </form>
     );
 };
