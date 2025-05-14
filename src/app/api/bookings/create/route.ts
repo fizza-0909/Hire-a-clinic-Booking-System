@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongoose';
 import { Booking } from '@/models/Booking';
-import { User } from '@/models/User';
+import User from '@/models/User';
 
 interface BookingRoom {
     id: number;

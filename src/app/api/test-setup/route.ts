@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongoose';
-import { User } from '@/models/User';
+import User from '@/models/User';
 import { Room } from '@/models/Room';
 
 export async function POST() {

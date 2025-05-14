@@ -15,14 +15,34 @@ if (!uri.startsWith('mongodb://') && !uri.startsWith('mongodb+srv://')) {
     }
 }
 
+// Add required query parameters if not present
+if (!uri.includes('retryWrites=')) {
+    uri += (uri.includes('?') ? '&' : '?') + 'retryWrites=true';
+}
+if (!uri.includes('w=')) {
+    uri += '&w=majority';
+}
+if (!uri.includes('maxPoolSize=')) {
+    uri += '&maxPoolSize=5';
+}
+if (!uri.includes('ssl=')) {
+    uri += '&ssl=true';
+}
+
 const options = {
-    maxPoolSize: 10,
-    minPoolSize: 5,
-    maxIdleTimeMS: 30000,
-    connectTimeoutMS: 30000,
-    serverSelectionTimeoutMS: 30000,
-    socketTimeoutMS: 30000,
-    waitQueueTimeoutMS: 30000,
+    maxPoolSize: 5,
+    minPoolSize: 1,
+    maxIdleTimeMS: 120000,
+    connectTimeoutMS: 60000,
+    serverSelectionTimeoutMS: 60000,
+    socketTimeoutMS: 120000,
+    waitQueueTimeoutMS: 60000,
+    heartbeatFrequencyMS: 10000,
+    retryWrites: true,
+    retryReads: true,
+    ssl: true,
+    directConnection: false,
+    family: 4
 };
 
 let client: MongoClient;
@@ -37,13 +57,21 @@ if (process.env.NODE_ENV === 'development') {
 
     if (!globalWithMongo._mongoClientPromise) {
         client = new MongoClient(uri, options);
-        globalWithMongo._mongoClientPromise = client.connect();
+        globalWithMongo._mongoClientPromise = client.connect()
+            .catch(error => {
+                console.error('Failed to connect to MongoDB:', error);
+                throw error;
+            });
     }
     clientPromise = globalWithMongo._mongoClientPromise;
 } else {
     // In production mode, it's best to not use a global variable.
     client = new MongoClient(uri, options);
-    clientPromise = client.connect();
+    clientPromise = client.connect()
+        .catch(error => {
+            console.error('Failed to connect to MongoDB:', error);
+            throw error;
+        });
 }
 
 // Export a module-scoped MongoClient promise. By doing this in a
@@ -52,8 +80,9 @@ export default clientPromise;
 
 // Cached database connection with retry mechanism
 export const connectToDatabase = async () => {
-    let retries = 3;
+    let retries = 5; // Increased retries
     let lastError;
+    let backoffDelay = 1000; // Start with 1 second delay
 
     while (retries > 0) {
         try {
@@ -61,8 +90,8 @@ export const connectToDatabase = async () => {
             const dbName = process.env.MONGODB_DB || 'hire-a-clinic';
             const db = client.db(dbName);
 
-            // Test the connection
-            await db.command({ ping: 1 });
+            // Test the connection with a longer timeout
+            await db.command({ ping: 1 }, { maxTimeMS: 30000 });
             console.log('Successfully connected to database:', dbName);
 
             return { client, db };
@@ -72,8 +101,10 @@ export const connectToDatabase = async () => {
             retries--;
 
             if (retries > 0) {
-                // Wait for 1 second before retrying
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Exponential backoff with jitter
+                const jitter = Math.floor(Math.random() * 1000);
+                await new Promise(resolve => setTimeout(resolve, backoffDelay + jitter));
+                backoffDelay *= 2; // Double the delay for next retry
             }
         }
     }

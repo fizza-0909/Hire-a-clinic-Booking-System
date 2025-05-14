@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
 import clientPromise from "./mongodb";
 import { compare } from "bcryptjs";
-import { User } from "@/models/User";
+import User from "@/models/User";
 import dbConnect from "./mongoose";
 
 // Extend the default session type

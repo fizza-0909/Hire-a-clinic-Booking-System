@@ -7,64 +7,33 @@ export const runtime = 'nodejs';
 
 export async function GET() {
     try {
-        // Log environment variables (excluding sensitive data)
-        console.log('Environment check:', {
-            hasMongoUri: !!process.env.MONGODB_URI,
-            hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
-            nodeEnv: process.env.NODE_ENV,
-            hasDbName: !!process.env.MONGODB_DB
-        });
-
         console.log('Testing database connection...');
-        const startTime = Date.now();
+
         const { db } = await connectToDatabase();
-        const connectionTime = Date.now() - startTime;
-        console.log(`Database connection established in ${connectionTime}ms`);
 
-        // Test database connection
-        const pingStart = Date.now();
-        const result = await db.command({ ping: 1 });
-        const pingTime = Date.now() - pingStart;
-        console.log(`Database ping completed in ${pingTime}ms:`, result);
-
-        // Try to count users
-        const countStart = Date.now();
-        const userCount = await db.collection('users').countDocuments();
-        const countTime = Date.now() - countStart;
-        console.log(`User count completed in ${countTime}ms. Found ${userCount} users`);
+        // Try to list collections as a connection test
+        const collections = await db.listCollections().toArray();
 
         return NextResponse.json({
             status: 'success',
-            message: 'Database connection successful',
-            timing: {
-                connection: connectionTime,
-                ping: pingTime,
-                count: countTime
-            },
-            userCount,
-            environmentCheck: {
-                hasMongoUri: !!process.env.MONGODB_URI,
-                hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
-                nodeEnv: process.env.NODE_ENV,
-                hasDbName: !!process.env.MONGODB_DB
-            }
+            message: 'Successfully connected to MongoDB',
+            collections: collections.map(col => col.name)
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Database test failed:', {
-            error: error instanceof Error ? {
-                message: error.message,
-                name: error.name,
-                stack: error.stack
-            } : error
+            message: error.message,
+            code: error.code,
+            name: error.name,
+            stack: error.stack
         });
 
         return NextResponse.json({
             status: 'error',
-            message: error instanceof Error ? error.message : 'Database connection failed',
-            error: error instanceof Error ? {
+            message: error.message,
+            error: {
                 name: error.name,
-                message: error.message
-            } : 'Unknown error'
+                code: error.code
+            }
         }, { status: 500 });
     }
 } 

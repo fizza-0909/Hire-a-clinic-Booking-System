@@ -35,11 +35,19 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
     const [processing, setProcessing] = useState(false);
 
     useEffect(() => {
-        if (!stripe) return;
+        if (!stripe) {
+            console.log('Stripe not initialized yet');
+            return;
+        }
 
         const query = new URLSearchParams(window.location.search);
         const paymentIntentClientSecret = query.get('payment_intent_client_secret');
         const paymentIntentId = query.get('payment_intent');
+
+        console.log('Payment intent params:', {
+            clientSecret: paymentIntentClientSecret ? 'present' : 'missing',
+            paymentIntentId: paymentIntentId ? 'present' : 'missing'
+        });
 
         if (paymentIntentClientSecret) {
             stripe.retrievePaymentIntent(paymentIntentClientSecret).then(({ paymentIntent }) => {
@@ -102,17 +110,23 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (!stripe || !elements) return;
+        if (!stripe || !elements) {
+            console.error('Stripe or Elements not initialized');
+            return;
+        }
 
         setProcessing(true);
         setError(null);
 
         try {
+            console.log('Starting payment submission...');
             const { error: submitError } = await elements.submit();
             if (submitError) {
+                console.error('Error submitting payment elements:', submitError);
                 throw new Error(submitError.message);
             }
 
+            console.log('Confirming payment...');
             const { error } = await stripe.confirmPayment({
                 elements,
                 confirmParams: {
@@ -127,13 +141,12 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
                 },
             });
 
-            // This point will only be reached if there is an immediate error when
-            // confirming the payment. For any other error, the customer will be redirected to
-            // the return_url.
             if (error) {
+                console.error('Error confirming payment:', error);
                 throw new Error(error.message);
             }
         } catch (err) {
+            console.error('Payment processing error:', err);
             const errorMessage = err instanceof Error ? err.message : 'Payment failed';
             setError(errorMessage);
             toast.error(errorMessage);

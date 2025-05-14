@@ -1,45 +1,39 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongoose';
 import mongoose from 'mongoose';
 
 export async function GET() {
     try {
-        // Test database connection
-        await dbConnect();
-        console.log('MongoDB Connection Status:', mongoose.connection.readyState);
+        if (!process.env.MONGODB_URI) {
+            throw new Error('MONGODB_URI is not defined');
+        }
 
-        // Get list of collections
-        const collections = await mongoose.connection.db.collections();
-        const collectionNames = collections.map(c => c.collectionName);
-
-        // Get database name
-        const dbName = mongoose.connection.db.databaseName;
-
-        return NextResponse.json({
-            status: 'success',
-            connection: {
-                readyState: mongoose.connection.readyState,
-                dbName: dbName,
-                collections: collectionNames
-            },
-            env: {
-                hasMongoUri: !!process.env.MONGODB_URI,
-                hasMongoDb: !!process.env.MONGODB_DB,
-                hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
-                nodeEnv: process.env.NODE_ENV
-            }
+        // Try to connect with a short timeout
+        await mongoose.connect(process.env.MONGODB_URI, {
+            connectTimeoutMS: 5000,
+            socketTimeoutMS: 5000,
         });
-    } catch (error) {
-        console.error('Database connection test failed:', error);
+
+        // Test the connection
+        await mongoose.connection.db.admin().ping();
+
         return NextResponse.json({
-            status: 'error',
-            message: error.message,
-            env: {
-                hasMongoUri: !!process.env.MONGODB_URI,
-                hasMongoDb: !!process.env.MONGODB_DB,
-                hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
-                nodeEnv: process.env.NODE_ENV
-            }
+            success: true,
+            message: 'Successfully connected to MongoDB',
+            database: mongoose.connection.db.databaseName
+        });
+    } catch (error: any) {
+        console.error('MongoDB connection test failed:', error);
+        return NextResponse.json({
+            success: false,
+            error: error.message || 'Failed to connect to MongoDB',
+            details: error
         }, { status: 500 });
+    } finally {
+        // Close the connection
+        try {
+            await mongoose.disconnect();
+        } catch (error) {
+            console.error('Error disconnecting from MongoDB:', error);
+        }
     }
 } 
