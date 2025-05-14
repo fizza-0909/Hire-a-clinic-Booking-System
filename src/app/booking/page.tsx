@@ -42,7 +42,7 @@ const BookingOptions = () => {
             id: 3,
             name: 'Room 3',
             image: '/images/room3.png',
-            description: 'Private consultation space with state-of-the-art facilities',
+            description: 'Private consultation space with state-of-the-art facilities and well furnished',
             selected: false,
             timeSlot: 'full'
         }
