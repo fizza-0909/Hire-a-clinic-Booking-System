@@ -18,13 +18,43 @@ export default function Register() {
         password: '',
         confirmPassword: ''
     });
+    const [passwordMatch, setPasswordMatch] = useState(true);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
+
+        if (name === 'phoneNumber') {
+            // Remove all non-digit characters
+            const digitsOnly = value.replace(/\D/g, '');
+
+            // Format phone number as (XXX) XXX-XXXX
+            let formattedNumber = digitsOnly;
+            if (digitsOnly.length >= 10) {
+                formattedNumber = `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6, 10)}`;
+            }
+
+            setFormData(prev => ({
+                ...prev,
+                [name]: formattedNumber
+            }));
+        } else {
+            setFormData(prev => {
+                const newData = {
+                    ...prev,
+                    [name]: value
+                };
+
+                // Check password match when either password or confirmPassword changes
+                if (name === 'password' || name === 'confirmPassword') {
+                    const match = name === 'password'
+                        ? value === prev.confirmPassword
+                        : prev.password === value;
+                    setPasswordMatch(match);
+                }
+
+                return newData;
+            });
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -34,6 +64,23 @@ export default function Register() {
         // Validate passwords match
         if (formData.password !== formData.confirmPassword) {
             toast.error('Passwords do not match');
+            setIsLoading(false);
+            setPasswordMatch(false);
+            return;
+        }
+
+        // Validate password strength
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!passwordRegex.test(formData.password)) {
+            toast.error('Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character');
+            setIsLoading(false);
+            return;
+        }
+
+        // Validate phone number
+        const phoneDigits = formData.phoneNumber.replace(/\D/g, '');
+        if (phoneDigits.length !== 10) {
+            toast.error('Please enter a valid 10-digit phone number');
             setIsLoading(false);
             return;
         }
@@ -120,11 +167,16 @@ export default function Register() {
                                 type="tel"
                                 name="phoneNumber"
                                 className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                placeholder="Enter your phone number"
+                                placeholder="(XXX) XXX-XXXX"
                                 value={formData.phoneNumber}
                                 onChange={handleChange}
                                 required
+                                pattern="\(\d{3}\) \d{3}-\d{4}"
+                                title="Please enter a valid phone number in the format (XXX) XXX-XXXX"
                             />
+                            <p className="mt-1 text-sm text-gray-500">
+                                Enter a 10-digit phone number
+                            </p>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
@@ -138,6 +190,8 @@ export default function Register() {
                                     onChange={handleChange}
                                     required
                                     minLength={8}
+                                    pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
+                                    title="Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character"
                                 />
                                 <button
                                     type="button"
@@ -157,21 +211,46 @@ export default function Register() {
                                 </button>
                             </div>
                             <p className="mt-1 text-sm text-gray-500">
-                                Password must be at least 8 characters long
+                                Password must contain at least 8 characters, including uppercase, lowercase, number, and special character
                             </p>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-                            <input
-                                type="password"
-                                name="confirmPassword"
-                                className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                placeholder="Confirm your password"
-                                value={formData.confirmPassword}
-                                onChange={handleChange}
-                                required
-                                minLength={8}
-                            />
+                            <div className="relative">
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    name="confirmPassword"
+                                    className={`mt-1 block w-full px-3 py-2 rounded-md border shadow-sm focus:ring-1 focus:ring-blue-500 ${formData.confirmPassword
+                                            ? passwordMatch
+                                                ? 'border-green-500 focus:border-green-500'
+                                                : 'border-red-500 focus:border-red-500'
+                                            : 'border-gray-300 focus:border-blue-500'
+                                        }`}
+                                    placeholder="Confirm your password"
+                                    value={formData.confirmPassword}
+                                    onChange={handleChange}
+                                    required
+                                    minLength={8}
+                                />
+                                {formData.confirmPassword && (
+                                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                        {passwordMatch ? (
+                                            <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        ) : (
+                                            <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            {formData.confirmPassword && !passwordMatch && (
+                                <p className="mt-1 text-sm text-red-500">
+                                    Passwords do not match
+                                </p>
+                            )}
                         </div>
                         <button
                             type="submit"

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import Stripe from 'stripe';
+import User from '@/models/User';
+import dbConnect from '@/lib/mongoose';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2023-10-16',
@@ -28,12 +30,23 @@ export async function POST(req: Request) {
         // Retrieve payment intent
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
+        // If payment was successful and includes security deposit, mark user as verified
+        if (paymentIntent.status === 'succeeded') {
+            await dbConnect();
+            const user = await User.findById(session.user.id);
+            if (user && !user.isVerified) {
+                user.isVerified = true;
+                await user.save();
+            }
+        }
+
         // Return payment status and any error information
         return NextResponse.json({
             status: paymentIntent.status,
             message: paymentIntent.last_payment_error?.message,
             code: paymentIntent.last_payment_error?.code,
-            decline_code: paymentIntent.last_payment_error?.decline_code
+            decline_code: paymentIntent.last_payment_error?.decline_code,
+            isVerified: paymentIntent.status === 'succeeded'
         });
     } catch (error) {
         console.error('Error verifying payment:', error);

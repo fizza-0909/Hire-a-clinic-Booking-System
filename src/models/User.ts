@@ -29,26 +29,9 @@ const userSchema = new Schema({
         type: String,
         trim: true
     },
-    address: {
-        type: String,
-        trim: true
-    },
-    city: {
-        type: String,
-        trim: true
-    },
-    state: {
-        type: String,
-        trim: true
-    },
-    zipCode: {
-        type: String,
-        trim: true
-    },
-    bio: {
-        type: String,
-        trim: true,
-        maxLength: [500, 'Bio cannot be longer than 500 characters']
+    isVerified: {
+        type: Boolean,
+        default: false
     },
     preferences: {
         emailNotifications: {

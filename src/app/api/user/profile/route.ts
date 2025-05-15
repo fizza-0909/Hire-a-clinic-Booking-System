@@ -42,11 +42,6 @@ export async function PUT(request: Request) {
             firstName: data.firstName,
             lastName: data.lastName,
             phoneNumber: data.phoneNumber,
-            address: data.address,
-            city: data.city,
-            state: data.state,
-            zipCode: data.zipCode,
-            bio: data.bio,
             preferences: data.preferences
         };
 

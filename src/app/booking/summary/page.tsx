@@ -45,12 +45,13 @@ const calculatePriceBreakdown = (rooms: Room[], type: BookingType): PriceBreakdo
     });
 
     const tax = subtotal * PRICING.taxRate;
-    const total = subtotal + tax;
+    const securityDeposit = 250; // Security deposit for first booking
+    const total = subtotal + tax + securityDeposit;
 
     return {
         subtotal,
         tax,
-        securityDeposit: 0,
+        securityDeposit,
         total
     };
 };
@@ -230,7 +231,7 @@ const SummaryPage = () => {
                 priceBreakdown: {
                     subtotal: priceBreakdown.subtotal,
                     tax: priceBreakdown.tax,
-                    securityDeposit: 0,
+                    securityDeposit: priceBreakdown.securityDeposit,
                     total: priceBreakdown.total
                 }
             };
@@ -271,10 +272,9 @@ const SummaryPage = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-            <Header />
-
-            <main className="container mx-auto px-4 py-8">
-                <div className="max-w-4xl mx-auto">
+            <header className="sticky top-0 left-0 right-0 z-50 bg-white shadow-md">
+                <Header />
+                <div className="container mx-auto px-4 py-4 mt-6">
                     <button
                         onClick={() => router.back()}
                         className="mb-6 flex items-center text-blue-600 hover:text-blue-800 transition-colors duration-200"
@@ -284,7 +284,11 @@ const SummaryPage = () => {
                         </svg>
                         Back to Calendar
                     </button>
+                </div>
+            </header>
 
+            <main className="container mx-auto px-4 py-8">
+                <div className="max-w-4xl mx-auto">
                     <div className="bg-white rounded-2xl shadow-xl p-8">
                         <h1 className="text-3xl font-bold text-gray-800 mb-8">Booking Summary</h1>
 
@@ -345,9 +349,19 @@ const SummaryPage = () => {
                                     <span>${priceBreakdown.tax.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between text-gray-600">
-                                    <div>
-                                        <span>Security Deposit</span>
-                                        <div className="text-xs text-gray-500">(Refundable)</div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center">
+                                            <span>Security Deposit</span>
+                                            <div className="ml-2 group relative">
+                                                <svg className="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg">
+                                                    Security deposit is only charged for your first booking. It will be refunded according to our policy.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-blue-600 font-medium">First Booking Only - Refundable</div>
                                     </div>
                                     <span>${priceBreakdown.securityDeposit.toFixed(2)}</span>
                                 </div>
@@ -356,6 +370,9 @@ const SummaryPage = () => {
                                         <span>Total</span>
                                         <span className="text-blue-600">${priceBreakdown.total.toFixed(2)}</span>
                                     </div>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        *Security deposit of $250 is included in the total as this is your first booking
+                                    </p>
                                 </div>
                             </div>
                         </div>

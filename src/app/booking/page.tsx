@@ -133,19 +133,25 @@ const BookingOptions = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-            <Header />
-            <div className="container mx-auto px-4 pt-20">
-                <div className="max-w-6xl mx-auto">
-                    <button
-                        onClick={handleBack}
-                        className="mb-6 flex items-center text-blue-600 hover:text-blue-800 transition-colors duration-200"
-                    >
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                        Back
-                    </button>
+            <header className="sticky top-0 left-0 right-0 z-50 bg-white shadow-md">
+                <Header />
+                <div className="container mx-auto px-4 mt-6">
+                    <div className="max-w-6xl mx-auto">
+                        <button
+                            onClick={handleBack}
+                            className="mb-6 flex items-center text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                        >
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Back
+                        </button>
+                    </div>
+                </div>
+            </header>
 
+            <main className="container mx-auto px-4 py-8">
+                <div className="max-w-6xl mx-auto">
                     <div className="text-center mb-12">
                         <h1 className="text-5xl font-bold text-gray-800 mb-4">Book Your Space</h1>
                         <p className="text-xl text-gray-600">Choose your preferred booking option and room(s)</p>
@@ -247,7 +253,7 @@ const BookingOptions = () => {
                         </button>
                     </div>
                 </div>
-            </div>
+            </main>
         </div>
     );
 };

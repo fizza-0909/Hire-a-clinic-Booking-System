@@ -35,15 +35,16 @@ export async function POST(req: Request) {
         const { firstName, lastName, email, phoneNumber, password } = body;
 
         // Validate input
-        if (!firstName || !lastName || !email || !password) {
+        if (!firstName || !lastName || !email || !password || !phoneNumber) {
             console.log('Missing required fields:', {
                 firstName: !!firstName,
                 lastName: !!lastName,
                 email: !!email,
-                password: !!password
+                password: !!password,
+                phoneNumber: !!phoneNumber
             });
             return NextResponse.json(
-                { error: 'Missing required fields' },
+                { error: 'All fields are required' },
                 { status: 400 }
             );
         }
@@ -54,6 +55,16 @@ export async function POST(req: Request) {
             console.log('Invalid email format:', email);
             return NextResponse.json(
                 { error: 'Invalid email format' },
+                { status: 400 }
+            );
+        }
+
+        // Validate phone number format
+        const phoneRegex = /^\+?1?\d{9,15}$/;
+        if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
+            console.log('Invalid phone number format:', phoneNumber);
+            return NextResponse.json(
+                { error: 'Invalid phone number format. Please enter a valid phone number.' },
                 { status: 400 }
             );
         }

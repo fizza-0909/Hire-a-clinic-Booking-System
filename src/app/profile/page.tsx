@@ -12,11 +12,7 @@ interface UserProfile {
     lastName: string;
     email: string;
     phoneNumber?: string;
-    address?: string;
-    city?: string;
-    state?: string;
-    zipCode?: string;
-    bio?: string;
+    isVerified?: boolean;
     preferences?: {
         emailNotifications: boolean;
     };
@@ -39,11 +35,7 @@ const ProfilePage = () => {
         lastName: '',
         email: '',
         phoneNumber: '',
-        address: '',
-        city: '',
-        state: '',
-        zipCode: '',
-        bio: '',
+        isVerified: false,
         preferences: {
             emailNotifications: true
         }
@@ -202,7 +194,31 @@ const ProfilePage = () => {
                         ) : (
                             <div className="space-y-6">
                                 <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-xl font-semibold text-gray-900">Profile Information</h2>
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-gray-900">Profile Information</h2>
+                                        <div className="mt-2">
+                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${profile.isVerified
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-yellow-100 text-yellow-800'
+                                                }`}>
+                                                {profile.isVerified ? (
+                                                    <>
+                                                        <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                        </svg>
+                                                        Verified User
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                        </svg>
+                                                        Unverified - Complete a booking with security deposit to get verified
+                                                    </>
+                                                )}
+                                            </span>
+                                        </div>
+                                    </div>
                                     <button
                                         onClick={() => isEditing ? handleSave() : setIsEditing(true)}
                                         disabled={isSaving}
@@ -280,94 +296,6 @@ const ProfilePage = () => {
                                             placeholder="Enter your phone number"
                                         />
                                     </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Address
-                                        </label>
-                                        <input
-                                            type="text"
-                                            name="address"
-                                            value={profile.address || ''}
-                                            onChange={handleInputChange}
-                                            disabled={!isEditing}
-                                            className={`w-full px-4 py-2 rounded-lg border ${isEditing
-                                                ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                                                : 'border-gray-200 bg-gray-50'
-                                                }`}
-                                            placeholder="Enter your address"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                City
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="city"
-                                                value={profile.city || ''}
-                                                onChange={handleInputChange}
-                                                disabled={!isEditing}
-                                                className={`w-full px-4 py-2 rounded-lg border ${isEditing
-                                                    ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                                                    : 'border-gray-200 bg-gray-50'
-                                                    }`}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                State
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="state"
-                                                value={profile.state || ''}
-                                                onChange={handleInputChange}
-                                                disabled={!isEditing}
-                                                className={`w-full px-4 py-2 rounded-lg border ${isEditing
-                                                    ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                                                    : 'border-gray-200 bg-gray-50'
-                                                    }`}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                ZIP Code
-                                            </label>
-                                            <input
-                                                type="text"
-                                                name="zipCode"
-                                                value={profile.zipCode || ''}
-                                                onChange={handleInputChange}
-                                                disabled={!isEditing}
-                                                className={`w-full px-4 py-2 rounded-lg border ${isEditing
-                                                    ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                                                    : 'border-gray-200 bg-gray-50'
-                                                    }`}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Bio
-                                    </label>
-                                    <textarea
-                                        name="bio"
-                                        value={profile.bio || ''}
-                                        onChange={handleInputChange}
-                                        disabled={!isEditing}
-                                        rows={4}
-                                        className={`w-full px-4 py-2 rounded-lg border ${isEditing
-                                            ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                                            : 'border-gray-200 bg-gray-50'
-                                            }`}
-                                        placeholder="Tell us about yourself"
-                                    />
                                 </div>
 
                                 {/* Password Change Section */}

@@ -15,6 +15,7 @@ declare module "next-auth" {
             name: string;
             firstName: string;
             lastName: string;
+            isVerified: boolean;
         }
     }
 }
@@ -27,6 +28,7 @@ declare module "next-auth/jwt" {
         name: string;
         firstName: string;
         lastName: string;
+        isVerified: boolean;
     }
 }
 
@@ -52,13 +54,20 @@ export const authOptions: NextAuthOptions = {
                 // Initial sign in
                 token.id = user.id;
                 token.email = user.email;
+                token.name = user.name;
                 token.firstName = user.firstName;
                 token.lastName = user.lastName;
-                token.name = `${user.firstName} ${user.lastName}`;
+                token.isVerified = user.isVerified;
             }
 
             // Handle updates to the session
             if (trigger === "update" && session) {
+                // Get fresh user data
+                await dbConnect();
+                const freshUser = await User.findById(token.id);
+                if (freshUser) {
+                    token.isVerified = freshUser.isVerified;
+                }
                 return { ...token, ...session.user };
             }
 
@@ -68,9 +77,10 @@ export const authOptions: NextAuthOptions = {
             if (token) {
                 session.user.id = token.id;
                 session.user.email = token.email;
+                session.user.name = token.name;
                 session.user.firstName = token.firstName;
                 session.user.lastName = token.lastName;
-                session.user.name = token.name;
+                session.user.isVerified = token.isVerified;
             }
             return session;
         }
@@ -119,7 +129,8 @@ export const authOptions: NextAuthOptions = {
                         email: user.email,
                         firstName: user.firstName,
                         lastName: user.lastName,
-                        name: `${user.firstName} ${user.lastName}`
+                        name: `${user.firstName} ${user.lastName}`,
+                        isVerified: user.isVerified
                     };
                 } catch (error) {
                     console.error('Authorization error:', error);

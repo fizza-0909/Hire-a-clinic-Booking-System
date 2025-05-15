@@ -469,6 +469,24 @@ const CalendarPage: React.FC = () => {
         localStorage.setItem('selectedRooms', JSON.stringify(updatedRooms));
     };
 
+    const handleRemoveDate = (roomId: number, dateToRemove: string) => {
+        if (bookingType !== 'daily') {
+            toast.error('Dates cannot be modified for monthly bookings');
+            return;
+        }
+
+        setSelectedRooms(prev =>
+            prev.map(r => {
+                if (r.id === roomId) {
+                    const newDates = r.dates?.filter(d => d !== dateToRemove) || [];
+                    return { ...r, dates: newDates };
+                }
+                return r;
+            }).filter(r => r.dates && r.dates.length > 0)
+        );
+        toast.success('Date removed successfully');
+    };
+
     const getDaysInMonth = (date: Date) => {
         const year = date.getFullYear();
         const month = date.getMonth();
@@ -534,80 +552,24 @@ const CalendarPage: React.FC = () => {
     };
 
     const getDateClassName = (date: Date | null, room: RoomBooking) => {
-        if (!date) return 'bg-gray-100 text-gray-400 pointer-events-none';
+        if (!date) return 'bg-gray-100 text-gray-400 cursor-not-allowed';
 
         const dateStr = date.toISOString().split('T')[0];
         const isSelected = room.dates?.includes(dateStr);
 
-        // Check weekend first
         if (isWeekend(date)) {
-            return 'bg-gray-100 text-gray-400 pointer-events-none';
+            return 'bg-gray-100 text-gray-400 cursor-not-allowed';
         }
 
-        // Get booking status
-        const status = bookingStatus.find(b =>
-            b.date === dateStr &&
-            b.roomId === room.id.toString()
-        );
-
-        // Handle different booking states
-        if (status) {
-            const hasMorning = status.timeSlots.includes('morning');
-            const hasEvening = status.timeSlots.includes('evening');
-            const hasFull = status.timeSlots.includes('full');
-
-            // If full day is booked
-            if (hasFull) {
-                return 'bg-red-100 text-red-600 pointer-events-none';
-            }
-
-            // For morning slot booking
-            if (room.timeSlot === 'morning') {
-                if (hasMorning) {
-                    return 'bg-gradient-to-b from-red-100 to-transparent pointer-events-none';
-                }
-                if (isSelected) {
-                    return 'bg-gradient-to-b from-blue-500 to-transparent';
-                }
-                return 'bg-white hover:bg-gradient-to-b hover:from-blue-100 hover:to-transparent';
-            }
-
-            // For evening slot booking
-            if (room.timeSlot === 'evening') {
-                if (hasEvening) {
-                    return 'bg-gradient-to-t from-red-100 to-transparent pointer-events-none';
-                }
-                if (isSelected) {
-                    return 'bg-gradient-to-t from-blue-500 to-transparent';
-                }
-                return 'bg-white hover:bg-gradient-to-t hover:from-blue-100 hover:to-transparent';
-            }
-
-            // For full day booking
-            if (room.timeSlot === 'full') {
-                if (hasMorning || hasEvening) {
-                    return 'bg-red-100 text-red-600 pointer-events-none';
-                }
-                if (isSelected) {
-                    return 'bg-blue-500 text-white';
-                }
-                return 'bg-white hover:bg-blue-50';
-            }
+        if (isDateBooked(date, room.id, room.timeSlot)) {
+            return 'bg-red-100 text-red-600 cursor-not-allowed';
         }
 
-        // Handle selected states
         if (isSelected) {
-            if (room.timeSlot === 'morning') {
-                return 'bg-gradient-to-b from-blue-500 to-transparent';
-            } else if (room.timeSlot === 'evening') {
-                return 'bg-gradient-to-t from-blue-500 to-transparent';
-            } else {
-                return 'bg-blue-500 text-white';
-            }
+            return 'bg-blue-500 text-white hover:bg-blue-600';
         }
 
-        // Default available state
-        return 'bg-white hover:bg-blue-50';
+        return 'bg-white hover:bg-blue-50 cursor-pointer';
     };
 
     const handleProceed = async () => {
@@ -774,7 +736,7 @@ const CalendarPage: React.FC = () => {
             <header className="sticky top-0 left-0 right-0 z-50 bg-white shadow-md">
                 <Header />
                 {/* Navigation Buttons */}
-                <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+                <div className="container mx-auto px-4 py-4 mt-6 flex justify-between items-center">
                     <button
                         onClick={() => router.push('/')}
                         className="flex items-center px-4 py-2 text-blue-600 hover:text-blue-800 transition-colors duration-200"
@@ -1050,6 +1012,7 @@ const CalendarPage: React.FC = () => {
                                     </div>
 
                                     <div className="border-t border-gray-200 my-4"></div>
+
                                     <div className="space-y-3">
                                         <div className="flex justify-between items-center text-sm text-gray-600">
                                             <span>Price per room:</span>
@@ -1072,6 +1035,13 @@ const CalendarPage: React.FC = () => {
                                         <div className="flex justify-between items-center text-sm text-gray-600">
                                             <span>Tax (3.5%):</span>
                                             <span>+ ${calculatePrice().tax.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm text-gray-600">
+                                            <div>
+                                                <span>Security Deposit</span>
+                                                <div className="text-xs text-blue-600">First Booking Only - Refundable</div>
+                                            </div>
+                                            <span>+ ${calculatePrice().securityDeposit.toFixed(2)}</span>
                                         </div>
                                         <div className="border-t border-gray-200 pt-3 mt-3">
                                             <div className="flex justify-between font-semibold">
