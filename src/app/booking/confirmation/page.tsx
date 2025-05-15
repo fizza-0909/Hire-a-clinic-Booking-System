@@ -25,6 +25,12 @@ interface BookingDetails {
     };
 }
 
+interface PaymentError {
+    message: string;
+    code?: string;
+    decline_code?: string;
+}
+
 const PRICING = {
     daily: {
         full: 300,
@@ -39,9 +45,11 @@ const PRICING = {
 const ConfirmationPage = () => {
     const router = useRouter();
     const { data: session } = useSession();
-    const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [paymentError, setPaymentError] = useState<PaymentError | null>(null);
+    const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showAnimation, setShowAnimation] = useState(true);
 
     // Define user information
     const userName = session?.user ? `${session.user.firstName} ${session.user.lastName}` : 'N/A';
@@ -49,79 +57,72 @@ const ConfirmationPage = () => {
     const userPhone = session?.user?.phoneNumber || 'N/A';
 
     useEffect(() => {
-        try {
-            // Check for Stripe payment status in URL
-            const params = new URLSearchParams(window.location.search);
-            const paymentIntentId = params.get('payment_intent');
-            const paymentIntentClientSecret = params.get('payment_intent_client_secret');
-
-            // First try to get confirmation data
-            const confirmationData = sessionStorage.getItem('confirmationData');
-
-            // If we have confirmation data, use it
-            if (confirmationData) {
-                try {
-                    const parsedData = JSON.parse(confirmationData);
-                    setBookingDetails(parsedData);
-                    setIsLoading(false);
-                    return;
-                } catch (error) {
-                    console.error('Error parsing confirmation data:', error);
-                }
-            }
-
-            // If we don't have confirmation data but have payment intent, try to get booking data
-            if (paymentIntentId && paymentIntentClientSecret) {
+        const verifyPaymentAndBooking = async () => {
+            try {
+                // Get stored payment intent and booking data
+                const paymentIntentData = sessionStorage.getItem('paymentIntent');
                 const bookingData = sessionStorage.getItem('bookingData');
-                console.log('Retrieved booking data:', bookingData);
 
-                if (!bookingData) {
-                    console.error('No booking data found in sessionStorage');
-                    toast.error('No booking confirmation found');
-                    router.push('/booking');
-                    return;
+                if (!paymentIntentData || !bookingData) {
+                    throw new Error('No payment or booking data found');
                 }
 
-                try {
-                    // Parse and validate the data
-                    const parsedData = JSON.parse(bookingData);
+                const { clientSecret } = JSON.parse(paymentIntentData);
+                const parsedBookingData = JSON.parse(bookingData);
 
-                    // Validate required fields
-                    if (!parsedData.rooms || !Array.isArray(parsedData.rooms) || parsedData.rooms.length === 0) {
-                        throw new Error('Invalid booking data: No rooms found');
-                    }
+                // Verify payment status
+                const response = await fetch('/api/payment/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ clientSecret }),
+                });
 
-                    if (!parsedData.bookingType) {
-                        throw new Error('Invalid booking data: No booking type found');
-                    }
+                const paymentStatus = await response.json();
 
-                    // Store confirmation data
-                    sessionStorage.setItem('confirmationData', bookingData);
-                    console.log('Stored confirmation data successfully');
-
-                    // Set the booking details
-                    setBookingDetails(parsedData);
-                    setIsLoading(false);
-
-                    // Clean up booking data only after successful setup
-                    sessionStorage.removeItem('bookingData');
-                    sessionStorage.removeItem('paymentIntent');
-                } catch (error) {
-                    console.error('Error processing booking data:', error);
-                    toast.error('Error processing booking data');
-                    router.push('/booking');
+                if (!response.ok) {
+                    throw new Error(paymentStatus.error || 'Failed to verify payment');
                 }
-            } else {
-                // No payment intent and no confirmation data
-                console.error('No payment intent or confirmation data found');
-                toast.error('No booking confirmation found');
-                router.push('/booking');
+
+                if (paymentStatus.status === 'succeeded') {
+                    setBookingDetails(parsedBookingData);
+                } else {
+                    // Payment failed or is incomplete
+                    setPaymentError({
+                        message: paymentStatus.message || 'Payment was not completed successfully',
+                        code: paymentStatus.code,
+                        decline_code: paymentStatus.decline_code
+                    });
+
+                    // Update booking status to failed
+                    await fetch('/api/bookings/update-status', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            bookingIds: parsedBookingData.bookingIds,
+                            status: 'failed',
+                            paymentError: {
+                                message: paymentStatus.message,
+                                code: paymentStatus.code,
+                                decline_code: paymentStatus.decline_code
+                            }
+                        }),
+                    });
+                }
+            } catch (error) {
+                console.error('Error verifying payment:', error);
+                setPaymentError({
+                    message: error instanceof Error ? error.message : 'An unknown error occurred'
+                });
+            } finally {
+                setIsLoading(false);
             }
-        } catch (error) {
-            console.error('Error in confirmation page:', error);
-            toast.error('Failed to load booking confirmation');
-            router.push('/booking');
-        }
+        };
+
+        verifyPaymentAndBooking();
     }, [router]);
 
     const formatDate = (dateStr: string) => {
@@ -212,7 +213,7 @@ const ConfirmationPage = () => {
         pdf.text("Room Details", margin, yPos);
         yPos += 8;
 
-        booking.rooms.forEach((room) => {
+        bookingDetails?.rooms.forEach((room) => {
             pdf.setFont("helvetica", "normal");
             pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
             pdf.text(`Room ${room.name}`, margin, yPos + 8);
@@ -229,11 +230,11 @@ const ConfirmationPage = () => {
 
         pdf.setFont("helvetica", "normal");
         pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text(`Subtotal: $${booking.priceBreakdown.subtotal.toFixed(2)}`, margin, yPos + 8);
-        pdf.text(`Tax: $${booking.priceBreakdown.tax.toFixed(2)}`, margin, yPos + 16);
-        pdf.text(`Security Deposit (Refundable): $${booking.priceBreakdown.securityDeposit.toFixed(2)}`, margin, yPos + 24);
+        pdf.text(`Subtotal: $${bookingDetails?.priceBreakdown.subtotal.toFixed(2)}`, margin, yPos + 8);
+        pdf.text(`Tax: $${bookingDetails?.priceBreakdown.tax.toFixed(2)}`, margin, yPos + 16);
+        pdf.text(`Security Deposit (Refundable): $${bookingDetails?.priceBreakdown.securityDeposit.toFixed(2)}`, margin, yPos + 24);
         pdf.setFont("helvetica", "bold");
-        pdf.text(`Total Amount: $${booking.priceBreakdown.total.toFixed(2)}`, margin, yPos + 36);
+        pdf.text(`Total Amount: $${bookingDetails?.priceBreakdown.total.toFixed(2)}`, margin, yPos + 36);
 
         yPos += 50;
 
@@ -322,6 +323,47 @@ const ConfirmationPage = () => {
         );
     }
 
+    if (paymentError) {
+        return (
+            <div className="min-h-screen bg-gray-50">
+                <Header />
+                <div className="max-w-4xl mx-auto p-6">
+                    <div className="bg-white rounded-2xl shadow-xl p-8">
+                        <div className="text-center mb-8">
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+                                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Failed</h1>
+                            <p className="text-lg text-gray-600 mb-6">{paymentError.message}</p>
+                            {paymentError.code && (
+                                <p className="text-sm text-gray-500 mb-2">Error Code: {paymentError.code}</p>
+                            )}
+                            {paymentError.decline_code && (
+                                <p className="text-sm text-gray-500 mb-4">Decline Code: {paymentError.decline_code}</p>
+                            )}
+                        </div>
+                        <div className="flex flex-col space-y-4">
+                            <button
+                                onClick={() => router.push('/booking/payment')}
+                                className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Try Payment Again
+                            </button>
+                            <button
+                                onClick={() => router.push('/my-bookings')}
+                                className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                            >
+                                View Booking History
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (!bookingDetails) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -342,6 +384,32 @@ const ConfirmationPage = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             <Header />
+            {/* Success Animation */}
+            {showAnimation && (
+                <div className="fixed top-0 left-0 right-0 flex justify-center items-center bg-green-50 py-4 shadow-md transition-all duration-500 ease-in-out z-50">
+                    <div className="flex items-center space-x-4">
+                        <div className="flex-shrink-0">
+                            <div className="h-12 w-12 rounded-full border-4 border-green-500 flex items-center justify-center animate-[bounce_1s_ease-in-out_infinite]">
+                                <svg className="h-6 w-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-green-800">Booking Confirmed!</h2>
+                            <p className="text-green-600">Your payment was successful and your booking is confirmed.</p>
+                        </div>
+                        <button
+                            onClick={() => setShowAnimation(false)}
+                            className="p-1 hover:bg-green-100 rounded-full"
+                        >
+                            <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
             <div className="max-w-4xl mx-auto p-6 space-y-8">
                 {/* Back Button */}
                 <button
@@ -440,14 +508,38 @@ const ConfirmationPage = () => {
                             </div>
                         </section>
 
-                        {/* Download Button */}
-                        <div className="flex justify-center pt-4">
+                        {/* Download and Navigation Buttons */}
+                        <div className="flex justify-center gap-4 pt-4">
                             <button
                                 onClick={handleDownload}
                                 disabled={isDownloading}
-                                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                                className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 text-lg font-semibold flex items-center"
                             >
-                                {isDownloading ? 'Generating PDF...' : 'Download Confirmation'}
+                                {isDownloading ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Generating PDF...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                        Download Confirmation
+                                    </>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => router.push('/')}
+                                className="bg-gray-100 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-200 transition-colors text-lg font-semibold flex items-center"
+                            >
+                                <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                </svg>
+                                Back to Main Page
                             </button>
                         </div>
                     </div>

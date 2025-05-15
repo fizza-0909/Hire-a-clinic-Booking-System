@@ -46,6 +46,7 @@ const CalendarPage: React.FC = () => {
     const [userData, setUserData] = useState<UserData | null>(null);
     const [selectedRooms, setSelectedRooms] = useState<RoomBooking[]>([]);
     const [showHalfDayOptions, setShowHalfDayOptions] = useState(false);
+    const [lastFetchTime, setLastFetchTime] = useState<number>(0);
 
     useEffect(() => {
         if (status === 'unauthenticated') {
@@ -89,6 +90,25 @@ const CalendarPage: React.FC = () => {
             fetchBookingStatus();
         }
     }, []);
+
+    // Add polling mechanism to refresh booking status
+    useEffect(() => {
+        const pollInterval = 10000; // Poll every 10 seconds
+        const currentTime = Date.now();
+
+        // Only poll if more than 10 seconds have passed since last fetch
+        if (currentTime - lastFetchTime >= pollInterval) {
+            fetchBookingStatus();
+            setLastFetchTime(currentTime);
+        }
+
+        const intervalId = setInterval(() => {
+            fetchBookingStatus();
+            setLastFetchTime(Date.now());
+        }, pollInterval);
+
+        return () => clearInterval(intervalId);
+    }, [currentMonth, selectedRooms, lastFetchTime]);
 
     const handleLogout = () => {
         localStorage.removeItem('user');
@@ -208,7 +228,7 @@ const CalendarPage: React.FC = () => {
             }
 
             if (dates.length < 30) {
-                toast.warning(`Only ${dates.length} available days found within the next ${maxDaysToCheck} days`);
+                toast.error(`Only ${dates.length} available days found within the next ${maxDaysToCheck} days`);
             }
 
             // Update selected rooms with available dates

@@ -6,22 +6,27 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import Header from '@/components/Header';
 
+interface PaymentError {
+    message: string;
+    code?: string;
+    decline_code?: string;
+}
+
 interface Booking {
     _id: string;
     roomId: string;
     timeSlot: 'full' | 'morning' | 'evening';
     dates: string[];
-    status: 'pending' | 'confirmed';
+    status: 'pending' | 'confirmed' | 'failed';
     totalAmount: number;
     paymentDetails: {
         status: string;
         createdAt: string;
         paymentIntentId?: string;
         confirmedAt?: string;
-        failureMessage?: string;
+        error?: PaymentError;
     };
     createdAt: string;
-    paymentStatus: string;
 }
 
 const MyBookingsPage = () => {
@@ -90,6 +95,19 @@ const MyBookingsPage = () => {
                 return 'Payment Failed';
             default:
                 return 'Payment Information Not Available';
+        }
+    };
+
+    const getPaymentStatusColor = (status: string | undefined) => {
+        switch (status) {
+            case 'succeeded':
+                return 'bg-green-100 text-green-800';
+            case 'pending':
+                return 'bg-yellow-100 text-yellow-800';
+            case 'failed':
+                return 'bg-red-100 text-red-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
         }
     };
 
@@ -190,7 +208,29 @@ const MyBookingsPage = () => {
 
             <main className="container mx-auto px-4 py-8">
                 <div className="max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold text-gray-800 mb-8">My Bookings</h1>
+                    <div className="flex justify-between items-center mb-8">
+                        <h1 className="text-3xl font-bold text-gray-800">My Bookings</h1>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={() => router.push('/')}
+                                className="flex items-center px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                            >
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                </svg>
+                                Back to Home
+                            </button>
+                            <button
+                                onClick={() => router.push('/booking')}
+                                className="flex items-center px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                            >
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                                </svg>
+                                Make New Booking
+                            </button>
+                        </div>
+                    </div>
 
                     {bookings.length === 0 ? (
                         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
@@ -219,18 +259,31 @@ const MyBookingsPage = () => {
                                             )}
                                         </div>
                                         <div className="flex flex-col items-end">
-                                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${booking.paymentDetails?.status === 'succeeded'
-                                                ? 'bg-green-100 text-green-800'
-                                                : booking.paymentDetails?.status === 'pending'
-                                                    ? 'bg-yellow-100 text-yellow-800'
-                                                    : booking.paymentDetails?.status === 'failed'
-                                                        ? 'bg-red-100 text-red-800'
-                                                        : 'bg-gray-100 text-gray-800'
-                                                }`}>
+                                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusColor(booking.paymentDetails?.status)}`}>
                                                 {getPaymentStatusText(booking.paymentDetails?.status)}
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Payment Error Details */}
+                                    {booking.paymentDetails?.error && (
+                                        <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                                            <h3 className="text-sm font-medium text-red-800 mb-2">Payment Failed Details</h3>
+                                            <p className="text-sm text-red-700">{booking.paymentDetails.error.message}</p>
+                                            {booking.paymentDetails.error.code && (
+                                                <p className="text-xs text-red-600 mt-1">Error Code: {booking.paymentDetails.error.code}</p>
+                                            )}
+                                            {booking.paymentDetails.error.decline_code && (
+                                                <p className="text-xs text-red-600 mt-1">Decline Code: {booking.paymentDetails.error.decline_code}</p>
+                                            )}
+                                            <button
+                                                onClick={() => router.push('/booking/payment')}
+                                                className="mt-3 text-sm font-medium text-red-700 hover:text-red-800"
+                                            >
+                                                Try Payment Again →
+                                            </button>
+                                        </div>
+                                    )}
 
                                     <div className="space-y-4">
                                         <div>

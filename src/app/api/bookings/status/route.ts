@@ -5,9 +5,10 @@ import { WithId, Document } from 'mongodb';
 interface Booking {
     _id: string;
     roomId: string;
-    dates: string[];
+    date: string;
     timeSlot: 'full' | 'morning' | 'evening';
     status: string;
+    createdAt: Date;
     paymentDetails: {
         status: string;
     };
@@ -42,13 +43,15 @@ export async function POST(req: Request) {
 
         // Find all bookings for the month and specific room if provided
         const query = {
-            dates: {
-                $elemMatch: {
-                    $gte: startDateStr,
-                    $lte: endDateStr
-                }
+            date: {
+                $gte: startDateStr,
+                $lte: endDateStr
             },
-            status: { $in: ['pending', 'confirmed'] }, // Include both pending and confirmed bookings
+            $or: [
+                { status: 'confirmed' },
+                { 'paymentDetails.status': 'succeeded' },
+                { status: 'pending', createdAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) } } // Only include pending bookings less than 30 minutes old
+            ],
             ...(roomId && { roomId: roomId.toString() })
         };
 
@@ -56,7 +59,7 @@ export async function POST(req: Request) {
 
         const bookings = await db.collection('bookings')
             .find(query)
-            .toArray() as WithId<Document & Booking>[];
+            .toArray() as unknown as (WithId<Document> & Booking)[];
 
         console.log(`Found ${bookings.length} bookings`);
 
@@ -64,41 +67,39 @@ export async function POST(req: Request) {
         const bookingMap = new Map<string, BookingStatus>();
 
         bookings.forEach((booking) => {
-            if (!booking.dates) return;
+            if (!booking.date) return;
 
-            booking.dates.forEach((date: string) => {
-                const key = `${date}-${booking.roomId}`;
+            const key = `${booking.date}-${booking.roomId}`;
 
-                if (!bookingMap.has(key)) {
-                    bookingMap.set(key, {
-                        date,
-                        roomId: booking.roomId,
-                        type: 'none',
-                        timeSlots: []
-                    });
+            if (!bookingMap.has(key)) {
+                bookingMap.set(key, {
+                    date: booking.date,
+                    roomId: booking.roomId,
+                    type: 'none',
+                    timeSlots: []
+                });
+            }
+
+            const status = bookingMap.get(key)!;
+
+            // Check both booking status and payment status
+            const isConfirmed = booking.status === 'confirmed' || booking.paymentDetails?.status === 'succeeded';
+            const isPending = booking.status === 'pending' && new Date(booking.createdAt) > new Date(Date.now() - 30 * 60 * 1000);
+
+            // Mark slots as taken for both confirmed and recent pending bookings
+            if (booking.timeSlot && (isConfirmed || isPending)) {
+                // Don't add duplicate time slots
+                if (!status.timeSlots.includes(booking.timeSlot)) {
+                    status.timeSlots.push(booking.timeSlot);
                 }
 
-                const status = bookingMap.get(key)!;
-
-                // Check both booking status and payment status
-                const isConfirmed = booking.status === 'confirmed' ||
-                    booking.paymentDetails?.status === 'succeeded';
-
-                // Only mark slots as taken if the booking is confirmed or pending
-                if (booking.timeSlot && (isConfirmed || booking.status === 'pending')) {
-                    // Don't add duplicate time slots
-                    if (!status.timeSlots.includes(booking.timeSlot)) {
-                        status.timeSlots.push(booking.timeSlot);
-                    }
-
-                    // Update booking type
-                    if (booking.timeSlot === 'full' || status.timeSlots.includes('full')) {
-                        status.type = 'booked';
-                    } else if (status.timeSlots.length > 0) {
-                        status.type = 'partial';
-                    }
+                // Update booking type
+                if (booking.timeSlot === 'full' || status.timeSlots.includes('full')) {
+                    status.type = 'booked';
+                } else if (status.timeSlots.length > 0) {
+                    status.type = 'partial';
                 }
-            });
+            }
         });
 
         // Log the final booking status for debugging
