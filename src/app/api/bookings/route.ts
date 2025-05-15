@@ -14,6 +14,8 @@ export async function GET(req: Request) {
             );
         }
 
+        console.log('Fetching bookings for user:', session.user.id);
+
         // Connect to database
         const { db } = await connectToDatabase();
 
@@ -24,6 +26,8 @@ export async function GET(req: Request) {
             })
             .sort({ createdAt: -1 })
             .toArray();
+
+        console.log(`Found ${bookings.length} bookings for user`);
 
         // Group bookings by roomId and payment intent
         const groupedBookings = bookings.reduce((acc: any[], booking) => {
@@ -61,13 +65,18 @@ export async function GET(req: Request) {
             return acc;
         }, []);
 
+        console.log(`Grouped into ${groupedBookings.length} unique bookings`);
+
         return NextResponse.json({
             bookings: groupedBookings
         });
     } catch (error) {
         console.error('Failed to fetch bookings:', error);
         return NextResponse.json(
-            { error: 'Failed to fetch bookings' },
+            {
+                error: 'Failed to fetch bookings',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            },
             { status: 500 }
         );
     }

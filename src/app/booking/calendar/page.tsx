@@ -35,6 +35,12 @@ interface StoredRoomBooking extends Omit<RoomBooking, 'dates'> {
     dates: string[];
 }
 
+interface BookingResponse {
+    date: string;
+    roomId: string;
+    timeSlots: TimeSlot[];
+}
+
 const CalendarPage: React.FC = () => {
     const router = useRouter();
     const { data: session, status } = useSession();
@@ -117,10 +123,20 @@ const CalendarPage: React.FC = () => {
 
     const fetchBookingStatus = async () => {
         try {
+            // Add delay between requests to prevent rate limiting
+            const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+            console.log('Starting to fetch booking status for rooms:', selectedRooms.map(r => r.id));
+
             // Fetch booking status for each selected room
-            const promises = selectedRooms.map(async room => {
+            const promises = selectedRooms.map(async (room, index) => {
                 try {
+                    // Add small delay between requests
+                    await delay(index * 100);
+
                     const roomId = room.id.toString();
+                    console.log(`Fetching booking status for room ${roomId}...`);
+
                     const response = await fetch('/api/bookings/status', {
                         method: 'POST',
                         headers: {
@@ -134,31 +150,53 @@ const CalendarPage: React.FC = () => {
                     });
 
                     if (!response.ok) {
-                        throw new Error(`Failed to fetch booking status for room ${roomId}`);
+                        const errorData = await response.json().catch(() => ({}));
+                        console.error(`Server error for room ${roomId}:`, {
+                            status: response.status,
+                            statusText: response.statusText,
+                            error: errorData
+                        });
+                        throw new Error(`Failed to fetch booking status for room ${roomId}: ${response.statusText}`);
                     }
 
                     const data = await response.json();
-                    return Array.isArray(data.bookings) ? data.bookings : [];
+                    console.log(`Successfully fetched bookings for room ${roomId}:`, data);
+
+                    if (!data.bookings || !Array.isArray(data.bookings)) {
+                        console.error(`Invalid booking data for room ${roomId}:`, data);
+                        return [];
+                    }
+
+                    // Validate each booking has required fields
+                    const validBookings = data.bookings.filter((booking: any): booking is BookingResponse =>
+                        booking &&
+                        typeof booking === 'object' &&
+                        'date' in booking &&
+                        'roomId' in booking &&
+                        'timeSlots' in booking &&
+                        Array.isArray(booking.timeSlots)
+                    );
+
+                    console.log(`Valid bookings for room ${roomId}:`, validBookings);
+                    return validBookings;
                 } catch (error) {
                     console.error(`Error fetching status for room ${room.id}:`, error);
+                    toast.error(`Failed to load availability for room ${room.id}`);
                     return [];
                 }
             });
 
+            console.log('Waiting for all booking status promises to resolve...');
             const results = await Promise.all(promises);
-            const allBookings = results.flat().filter(booking =>
-                booking &&
-                typeof booking === 'object' &&
-                'date' in booking &&
-                'roomId' in booking &&
-                'timeSlots' in booking &&
-                Array.isArray(booking.timeSlots)
-            );
 
+            console.log('Processing booking results...');
+            const allBookings = results.flat();
+
+            console.log('Final processed bookings:', allBookings);
             setBookingStatus(allBookings);
         } catch (error) {
             console.error('Failed to fetch booking status:', error);
-            toast.error('Failed to load booking availability');
+            toast.error('Failed to load booking availability. Please try refreshing the page.');
             setBookingStatus([]);
         }
     };
@@ -304,21 +342,49 @@ const CalendarPage: React.FC = () => {
         const room = selectedRooms.find(r => r.id === roomId);
         if (!room) return;
 
-        // Check for date conflicts with the new time slot
-        const conflictingDates = room.dates?.filter(dateStr => {
-            const date = new Date(dateStr);
-            return !isTimeSlotAvailable(date, roomId, timeSlot);
-        }) || [];
-
         // Keep track of compatible dates
         const compatibleDates = room.dates?.filter(dateStr => {
             const date = new Date(dateStr);
-            return isTimeSlotAvailable(date, roomId, timeSlot);
+            return !isDateBooked(date, roomId, timeSlot);
         }) || [];
 
-        if (conflictingDates.length > 0) {
-            // Format dates for display
-            const formattedDates = conflictingDates.map(date =>
+        // Keep track of incompatible dates
+        const incompatibleDates = room.dates?.filter(dateStr => {
+            const date = new Date(dateStr);
+            return isDateBooked(date, roomId, timeSlot);
+        }) || [];
+
+        // Update the room's time slot and dates
+        setSelectedRooms(prev =>
+            prev.map(r => {
+                if (r.id === roomId) {
+                    return {
+                        ...r,
+                        timeSlot,
+                        dates: compatibleDates // Keep only compatible dates
+                    };
+                }
+                return r;
+            })
+        );
+
+        // Save to sessionStorage
+        const updatedRooms = selectedRooms.map(r => {
+            if (r.id === roomId) {
+                return {
+                    ...r,
+                    timeSlot,
+                    dates: compatibleDates
+                };
+            }
+            return r;
+        });
+        sessionStorage.setItem('selectedRooms', JSON.stringify(updatedRooms));
+
+        // Show appropriate toast message
+        const timeSlotText = timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening';
+        if (incompatibleDates.length > 0) {
+            const formattedIncompatibleDates = incompatibleDates.map(date =>
                 new Date(date).toLocaleDateString('en-US', {
                     weekday: 'short',
                     month: 'short',
@@ -326,54 +392,20 @@ const CalendarPage: React.FC = () => {
                 })
             ).join(', ');
 
-            if (compatibleDates.length > 0) {
-                // Some dates are compatible, some aren't
-                toast.error(
-                    <div>
-                        <p>Some dates are not available for {timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening'} slot.</p>
-                        <p className="text-sm mt-1">Incompatible dates: {formattedDates}</p>
-                        <p className="text-sm mt-1">Compatible dates will be preserved.</p>
-                    </div>,
-                    { duration: 5000 }
-                );
-            } else {
-                // No dates are compatible
-                toast.error(
-                    <div>
-                        <p>Cannot switch to {timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening'} slot.</p>
-                        <p className="text-sm mt-1">Please unselect these dates first: {formattedDates}</p>
-                    </div>,
-                    { duration: 5000 }
-                );
-                return;
-            }
-        }
-
-        setSelectedRooms(prev =>
-            prev.map(r => {
-                if (r.id === roomId) {
-                    return {
-                        ...r,
-                        timeSlot,
-                        // Keep compatible dates, remove conflicting ones
-                        dates: compatibleDates
-                    };
-                }
-                return r;
-            })
-        );
-
-        const timeSlotText = timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening';
-        if (compatibleDates.length === room.dates?.length) {
-            toast.success(`Switched to ${timeSlotText} slot`);
+            toast((t) => (
+                <div>
+                    <p>Some dates were removed due to conflicts with {timeSlotText} slot:</p>
+                    <p className="text-sm mt-1 text-red-500">{formattedIncompatibleDates}</p>
+                    {compatibleDates.length > 0 && (
+                        <p className="text-sm mt-1 text-green-500">{compatibleDates.length} compatible dates preserved</p>
+                    )}
+                </div>
+            ), { duration: 5000 });
         } else if (compatibleDates.length > 0) {
-            toast.success(`Switched to ${timeSlotText} slot. Compatible dates have been preserved.`);
+            toast.success(`Switched to ${timeSlotText} slot. All dates preserved.`);
         } else {
-            toast.success(`Switched to ${timeSlotText} slot. Previous dates were cleared.`);
+            toast.success(`Switched to ${timeSlotText} slot.`);
         }
-
-        // Save to localStorage
-        localStorage.setItem('selectedRooms', JSON.stringify(selectedRooms));
     };
 
     const isTimeSlotAvailable = (date: Date | null, roomId: number, timeSlot: TimeSlot): boolean => {
@@ -451,8 +483,8 @@ const CalendarPage: React.FC = () => {
         // Calculate tax
         const tax = subtotal * PRICING.taxRate;
 
-        // Calculate security deposit - $250 per room for first booking
-        const securityDeposit = PRICING.securityDeposit * selectedRooms.length;
+        // Calculate security deposit - only for unverified users
+        const securityDeposit = !session?.user?.isVerified ? PRICING.securityDeposit : 0;
 
         // Return all price components
         return {
@@ -533,22 +565,35 @@ const CalendarPage: React.FC = () => {
     const isDateBooked = (date: Date | null, roomId: number, timeSlot: TimeSlot): boolean => {
         if (!date) return false;
 
-        const dateStr = date.toISOString().split('T')[0];
-        const roomIdStr = roomId.toString();
-        const status = bookingStatus.find(b => b.date === dateStr && b.roomId === roomIdStr);
+        try {
+            const dateStr = date.toISOString().split('T')[0];
+            const roomIdStr = roomId.toString();
 
-        if (!status) return false;
+            console.log('Checking booking status for:', {
+                date: dateStr,
+                roomId: roomIdStr,
+                timeSlot,
+                bookingStatus: bookingStatus
+            });
 
-        if (status.timeSlots.includes('full')) return true;
+            const status = bookingStatus.find(b =>
+                b.date === dateStr &&
+                b.roomId === roomIdStr
+            );
 
-        // For partial bookings, check if the requested time slot is available
-        if (timeSlot === 'full') {
-            // Can't book full day if any slot is taken
-            return status.timeSlots.includes('morning') || status.timeSlots.includes('evening');
+            if (!status || !Array.isArray(status.timeSlots)) return false;
+
+            // For full day booking, check if full day is booked
+            if (timeSlot === 'full') {
+                return status.timeSlots.includes('full');
+            }
+
+            // For half-day bookings, check if either full day is booked or the specific slot
+            return status.timeSlots.includes('full') || status.timeSlots.includes(timeSlot);
+        } catch (error) {
+            console.error('Error checking if date is booked:', error);
+            return false;
         }
-
-        // For half-day bookings, only check the specific slot requested
-        return status.timeSlots.includes(timeSlot);
     };
 
     const getDateClassName = (date: Date | null, room: RoomBooking) => {
@@ -561,14 +606,49 @@ const CalendarPage: React.FC = () => {
             return 'bg-gray-100 text-gray-400 cursor-not-allowed';
         }
 
-        if (isDateBooked(date, room.id, room.timeSlot)) {
-            return 'bg-red-100 text-red-600 cursor-not-allowed';
-        }
+        // Get booking status for this date and room
+        const status = bookingStatus.find(b =>
+            b.date === dateStr &&
+            b.roomId === room.id.toString()
+        );
 
+        // If the date is selected
         if (isSelected) {
-            return 'bg-blue-500 text-white hover:bg-blue-600';
+            // For selected dates, show different styles based on time slot
+            if (room.timeSlot === 'morning') {
+                return 'bg-gradient-to-b from-blue-500 to-white';
+            } else if (room.timeSlot === 'evening') {
+                return 'bg-gradient-to-t from-blue-500 to-white';
+            } else {
+                return 'bg-blue-500 text-white hover:bg-blue-600';
+            }
         }
 
+        // Check for different booking scenarios
+        if (status && Array.isArray(status.timeSlots) && status.timeSlots.length > 0) {
+            console.log('Rendering booked status for:', {
+                date: dateStr,
+                roomId: room.id,
+                timeSlots: status.timeSlots
+            });
+
+            // If fully booked
+            if (status.timeSlots.includes('full')) {
+                return 'bg-red-100 text-red-600 cursor-not-allowed';
+            }
+
+            // If morning is booked
+            if (status.timeSlots.includes('morning')) {
+                return 'bg-gradient-to-b from-red-100 to-white text-gray-600 cursor-not-allowed';
+            }
+
+            // If evening is booked
+            if (status.timeSlots.includes('evening')) {
+                return 'bg-gradient-to-t from-red-100 to-white text-gray-600 cursor-not-allowed';
+            }
+        }
+
+        // Available dates
         return 'bg-white hover:bg-blue-50 cursor-pointer';
     };
 
@@ -1036,21 +1116,35 @@ const CalendarPage: React.FC = () => {
                                             <span>Tax (3.5%):</span>
                                             <span>+ ${calculatePrice().tax.toFixed(2)}</span>
                                         </div>
-                                        <div className="flex justify-between items-center text-sm text-gray-600">
-                                            <div>
-                                                <span>Security Deposit</span>
-                                                <div className="text-xs text-blue-600">First Booking Only - Refundable</div>
+                                        {!session?.user?.isVerified && (
+                                            <div className="flex justify-between items-center text-sm text-gray-600">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center">
+                                                        <span>Security Deposit</span>
+                                                        <div className="ml-2 group relative">
+                                                            <svg className="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg">
+                                                                Security deposit is only charged for your first booking. It will be refunded according to our policy.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-xs text-blue-600 font-medium">First Booking Only - Refundable</div>
+                                                </div>
+                                                <span>+ ${calculatePrice().securityDeposit.toFixed(2)}</span>
                                             </div>
-                                            <span>+ ${calculatePrice().securityDeposit.toFixed(2)}</span>
-                                        </div>
-                                        <div className="border-t border-gray-200 pt-3 mt-3">
-                                            <div className="flex justify-between font-semibold">
+                                        )}
+                                        <div className="border-t border-gray-200 pt-3">
+                                            <div className="flex justify-between items-center text-lg font-semibold">
                                                 <span>Total Price:</span>
                                                 <span className="text-blue-600">${calculatePrice().total.toFixed(2)}</span>
                                             </div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                *A refundable security deposit of $250 will be charged at the time of Registeration only
-                                            </div>
+                                            {!session?.user?.isVerified && (
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    *A refundable security deposit of $250 will be charged as this is your first booking
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
 

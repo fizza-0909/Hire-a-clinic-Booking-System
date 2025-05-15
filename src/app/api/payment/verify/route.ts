@@ -30,13 +30,18 @@ export async function POST(req: Request) {
         // Retrieve payment intent
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
-        // If payment was successful and includes security deposit, mark user as verified
+        // If payment was successful, check if this is user's first successful payment
         if (paymentIntent.status === 'succeeded') {
             await dbConnect();
             const user = await User.findById(session.user.id);
+
             if (user && !user.isVerified) {
-                user.isVerified = true;
-                await user.save();
+                // Check if this payment includes security deposit (first payment)
+                const metadata = paymentIntent.metadata || {};
+                if (metadata.includesSecurityDeposit === 'true') {
+                    user.isVerified = true;
+                    await user.save();
+                }
             }
         }
 

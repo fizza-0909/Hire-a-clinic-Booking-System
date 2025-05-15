@@ -1,114 +1,82 @@
 import { MongoClient } from 'mongodb';
 
 if (!process.env.MONGODB_URI) {
-    throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+    throw new Error('Please add your Mongo URI to .env.local');
 }
 
-// Ensure the MongoDB URI is properly formatted
-let uri = process.env.MONGODB_URI;
-if (!uri.startsWith('mongodb://') && !uri.startsWith('mongodb+srv://')) {
-    // Try to fix common formatting issues
-    if (uri.includes('@') && !uri.startsWith('mongodb')) {
-        uri = `mongodb://${uri}`;
-    } else {
-        throw new Error('Invalid MONGODB_URI format. Must start with mongodb:// or mongodb+srv://');
-    }
-}
-
-// Add required query parameters if not present
-if (!uri.includes('retryWrites=')) {
-    uri += (uri.includes('?') ? '&' : '?') + 'retryWrites=true';
-}
-if (!uri.includes('w=')) {
-    uri += '&w=majority';
-}
-if (!uri.includes('maxPoolSize=')) {
-    uri += '&maxPoolSize=5';
-}
-if (!uri.includes('ssl=')) {
-    uri += '&ssl=true';
-}
-
+const uri = process.env.MONGODB_URI;
 const options = {
-    maxPoolSize: 5,
-    minPoolSize: 1,
-    maxIdleTimeMS: 120000,
-    connectTimeoutMS: 60000,
-    serverSelectionTimeoutMS: 60000,
-    socketTimeoutMS: 120000,
-    waitQueueTimeoutMS: 60000,
-    heartbeatFrequencyMS: 10000,
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    family: 4,
     retryWrites: true,
     retryReads: true,
-    ssl: true,
-    directConnection: false,
-    family: 4
+    connectTimeoutMS: 10000,
 };
 
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
-if (process.env.NODE_ENV === 'development') {
-    // In development mode, use a global variable so that the value
-    // is preserved across module reloads caused by HMR (Hot Module Replacement).
-    let globalWithMongo = global as typeof globalThis & {
-        _mongoClientPromise?: Promise<MongoClient>;
-    };
+const MAX_RETRIES = 5;
+const RETRY_DELAY = 1000; // 1 second
 
-    if (!globalWithMongo._mongoClientPromise) {
-        client = new MongoClient(uri, options);
-        globalWithMongo._mongoClientPromise = client.connect()
-            .catch(error => {
-                console.error('Failed to connect to MongoDB:', error);
-                throw error;
-            });
-    }
-    clientPromise = globalWithMongo._mongoClientPromise;
-} else {
-    // In production mode, it's best to not use a global variable.
-    client = new MongoClient(uri, options);
-    clientPromise = client.connect()
-        .catch(error => {
-            console.error('Failed to connect to MongoDB:', error);
-            throw error;
-        });
-}
+export async function connectToDatabase() {
+    try {
+        if (!client) {
+            console.log('Creating new MongoDB client...');
+            client = new MongoClient(uri, options);
+        }
 
-// Export a module-scoped MongoClient promise. By doing this in a
-// separate module, the client can be shared across functions.
-export default clientPromise;
+        // If we already have a connection promise, return it
+        if (clientPromise) {
+            const connectedClient = await clientPromise;
+            // Test the connection
+            await connectedClient.db().command({ ping: 1 });
+            return { db: connectedClient.db(), client: connectedClient };
+        }
 
-// Cached database connection with retry mechanism
-export const connectToDatabase = async () => {
-    let retries = 5; // Increased retries
-    let lastError;
-    let backoffDelay = 1000; // Start with 1 second delay
+        let retries = MAX_RETRIES;
+        let lastError;
 
-    while (retries > 0) {
-        try {
-            const client = await clientPromise;
-            const dbName = process.env.MONGODB_DB || 'hire-a-clinic';
-            const db = client.db(dbName);
+        while (retries > 0) {
+            try {
+                console.log(`Connecting to database... Retries left: ${retries}`);
+                clientPromise = client.connect();
+                const connectedClient = await clientPromise;
 
-            // Test the connection with a longer timeout
-            await db.command({ ping: 1 }, { maxTimeMS: 30000 });
-            console.log('Successfully connected to database:', dbName);
+                // Test the connection
+                await connectedClient.db().command({ ping: 1 });
+                console.log('Successfully connected to database');
 
-            return { client, db };
-        } catch (error) {
-            lastError = error;
-            console.error(`Database connection attempt failed. Retries left: ${retries - 1}`, error);
-            retries--;
-
-            if (retries > 0) {
-                // Exponential backoff with jitter
-                const jitter = Math.floor(Math.random() * 1000);
-                await new Promise(resolve => setTimeout(resolve, backoffDelay + jitter));
-                backoffDelay *= 2; // Double the delay for next retry
+                return { db: connectedClient.db(), client: connectedClient };
+            } catch (error) {
+                lastError = error;
+                console.error(`Database connection attempt failed. Retries left: ${retries}`, error);
+                retries--;
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                }
             }
         }
-    }
 
-    console.error('All database connection attempts failed');
-    throw lastError || new Error('Failed to establish database connection after multiple attempts');
-};
+        throw lastError || new Error('Failed to connect to database after multiple retries');
+    } catch (error) {
+        console.error('Error connecting to database:', error);
+        throw error;
+    }
+}
+
+// Handle cleanup on app termination
+process.on('SIGINT', async () => {
+    try {
+        if (client) {
+            await client.close();
+            console.log('MongoDB connection closed through app termination');
+        }
+    } catch (error) {
+        console.error('Error closing MongoDB connection:', error);
+    } finally {
+        process.exit(0);
+    }
+});

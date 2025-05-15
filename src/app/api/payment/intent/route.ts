@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
+import { BookingData } from '@/types/booking';
 
 interface BookingRoom {
     id: number;
     timeSlot: string;
     dates: string[];
-}
-
-interface BookingData {
-    rooms: BookingRoom[];
-    bookingType: 'daily' | 'monthly';
-    totalAmount: number;
 }
 
 if (!process.env.STRIPE_SECRET_KEY) {
@@ -30,7 +25,8 @@ export async function POST(req: Request) {
         const session = await getServerSession(authOptions);
         console.log('Session check:', {
             hasSession: !!session,
-            hasUserId: !!session?.user?.id
+            hasUserId: !!session?.user?.id,
+            isVerified: session?.user?.isVerified
         });
 
         if (!session?.user?.id) {
@@ -48,7 +44,8 @@ export async function POST(req: Request) {
                 amount: requestData.amount,
                 hasBookingData: !!requestData.bookingData,
                 roomCount: requestData.bookingData?.rooms?.length,
-                totalAmount: requestData.bookingData?.totalAmount
+                totalAmount: requestData.bookingData?.totalAmount,
+                isVerified: session.user.isVerified
             });
         } catch (e) {
             console.error('Payment intent creation failed: Invalid JSON data', e);
@@ -61,7 +58,7 @@ export async function POST(req: Request) {
         const { amount, bookingData } = requestData as { amount: number; bookingData: BookingData };
 
         // Validate amount matches booking data
-        const expectedAmount = Math.round(bookingData.totalAmount * 100); // Convert to cents
+        const expectedAmount = Math.round(bookingData.totalAmount * 100);
         if (amount !== expectedAmount) {
             console.error('Payment amount mismatch:', {
                 providedAmount: amount,
@@ -99,7 +96,8 @@ export async function POST(req: Request) {
             userId: session.user.id,
             roomCount: bookingData.rooms.length,
             amount,
-            bookingType: bookingData.bookingType
+            bookingType: bookingData.bookingType,
+            includesSecurityDeposit: !session.user.isVerified
         });
 
         try {
@@ -111,6 +109,7 @@ export async function POST(req: Request) {
                     timeSlot: room.timeSlot,
                     status: 'pending',
                     totalAmount: amount / 100, // Convert back to dollars
+                    includesSecurityDeposit: !session.user.isVerified,
                     paymentDetails: {
                         status: 'pending',
                         createdAt: new Date()
@@ -128,7 +127,8 @@ export async function POST(req: Request) {
             // Create a PaymentIntent with the order amount and currency
             console.log('Creating Stripe payment intent...', {
                 amount: Math.round(amount),
-                userId: session.user.id
+                userId: session.user.id,
+                includesSecurityDeposit: !session.user.isVerified
             });
 
             const paymentIntent = await stripe.paymentIntents.create({
@@ -139,13 +139,15 @@ export async function POST(req: Request) {
                 },
                 metadata: {
                     userId: session.user.id,
-                    bookingIds: bookingIds.join(',')
+                    bookingIds: bookingIds.join(','),
+                    includesSecurityDeposit: (!session.user.isVerified).toString()
                 }
             });
 
             console.log('Successfully created payment intent', {
                 paymentIntentId: paymentIntent.id,
-                amount: paymentIntent.amount
+                amount: paymentIntent.amount,
+                includesSecurityDeposit: !session.user.isVerified
             });
 
             // Update bookings with payment intent ID
@@ -164,7 +166,8 @@ export async function POST(req: Request) {
 
             return NextResponse.json({
                 clientSecret: paymentIntent.client_secret,
-                bookingIds
+                bookingIds,
+                includesSecurityDeposit: !session.user.isVerified
             });
         } catch (dbError) {
             console.error('Database operation failed:', dbError);

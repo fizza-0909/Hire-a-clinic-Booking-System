@@ -22,13 +22,18 @@ interface BookingStatus {
 }
 
 export async function POST(req: Request) {
-    try {
-        const { db } = await connectToDatabase();
-        const { month, year, roomId } = await req.json();
+    console.log('Received booking status request');
 
-        if (!month || !year) {
+    try {
+        // Validate request body
+        const body = await req.json();
+        const { month, year, roomId } = body;
+
+        console.log('Request parameters:', { month, year, roomId });
+
+        if (!month || !year || !roomId) {
             return NextResponse.json(
-                { error: 'Month and year are required' },
+                { error: 'Missing required parameters' },
                 { status: 400 }
             );
         }
@@ -37,79 +42,44 @@ export async function POST(req: Request) {
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0);
 
-        // Format dates to match our string format (YYYY-MM-DD)
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        console.log('Connecting to database...');
+        const { db } = await connectToDatabase();
 
-        // Find all bookings for the month and specific room if provided
-        // Only consider bookings with successful payments
-        const query = {
-            date: {
-                $gte: startDateStr,
-                $lte: endDateStr
-            },
-            'paymentDetails.status': 'succeeded', // Only consider paid bookings
-            ...(roomId && { roomId: roomId.toString() })
-        };
-
-        console.log('Fetching bookings with query:', query);
-
+        // Find all bookings for the room in the specified month
         const bookings = await db.collection('bookings')
-            .find(query)
-            .toArray() as unknown as (WithId<Document> & Booking)[];
+            .find({
+                roomId: roomId,
+                date: {
+                    $gte: startDate.toISOString().split('T')[0],
+                    $lte: endDate.toISOString().split('T')[0]
+                },
+                'paymentDetails.status': 'succeeded'
+            })
+            .toArray();
 
-        console.log(`Found ${bookings.length} paid bookings`);
+        console.log(`Found ${bookings.length} bookings for room ${roomId}`);
 
-        // Create a map of dates and their booking status per room
-        const bookingMap = new Map<string, BookingStatus>();
+        // Transform bookings into the required format
+        const formattedBookings = bookings.map(booking => ({
+            date: booking.date,
+            roomId: booking.roomId,
+            timeSlots: Array.isArray(booking.timeSlot) ? booking.timeSlot : [booking.timeSlot]
+        }));
 
-        bookings.forEach((booking) => {
-            if (!booking.date) return;
+        console.log('Formatted bookings:', formattedBookings);
 
-            const key = `${booking.date}-${booking.roomId}`;
-
-            if (!bookingMap.has(key)) {
-                bookingMap.set(key, {
-                    date: booking.date,
-                    roomId: booking.roomId,
-                    type: 'none',
-                    timeSlots: []
-                });
-            }
-
-            const status = bookingMap.get(key)!;
-
-            // Only process paid bookings
-            if (booking.timeSlot && booking.paymentDetails?.status === 'succeeded') {
-                // Don't add duplicate time slots
-                if (!status.timeSlots.includes(booking.timeSlot)) {
-                    status.timeSlots.push(booking.timeSlot);
-                }
-
-                // Update booking type
-                if (booking.timeSlot === 'full' || status.timeSlots.includes('full')) {
-                    status.type = 'booked';
-                } else if (status.timeSlots.length > 0) {
-                    status.type = 'partial';
-                }
-            }
-        });
-
-        // Log the final booking status for debugging
-        console.log('Final booking status:', {
-            totalDates: bookingMap.size,
-            statuses: Array.from(bookingMap.values()).map(s => ({
-                date: s.date,
-                type: s.type,
-                slots: s.timeSlots
-            }))
-        });
-
-        return NextResponse.json({
-            bookings: Array.from(bookingMap.values())
-        });
+        return NextResponse.json({ bookings: formattedBookings });
     } catch (error) {
         console.error('Error fetching booking status:', error);
+
+        // Check if it's a connection error
+        if (error instanceof Error && error.message.includes('ECONNRESET')) {
+            return NextResponse.json(
+                { error: 'Database connection error. Please try again.' },
+                { status: 503 }
+            );
+        }
+
         return NextResponse.json(
             { error: 'Failed to fetch booking status' },
             { status: 500 }

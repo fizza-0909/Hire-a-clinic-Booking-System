@@ -57,13 +57,25 @@ const MyBookingsPage = () => {
 
         const fetchBookings = async () => {
             try {
+                console.log('Fetching user bookings...');
                 const response = await fetch('/api/bookings');
+
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Failed to fetch bookings');
+                    const errorData = await response.json();
+                    console.error('Failed to fetch bookings:', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        error: errorData
+                    });
+                    throw new Error(errorData.error || 'Failed to fetch bookings');
                 }
 
                 const data = await response.json();
+                console.log('Successfully fetched bookings:', {
+                    count: data.bookings.length,
+                    bookings: data.bookings
+                });
+
                 setBookings(data.bookings);
 
                 // Check if user has any successful payment
@@ -71,10 +83,12 @@ const MyBookingsPage = () => {
                     booking.paymentDetails?.status === 'succeeded'
                 );
                 setHasSecurityDeposit(hasDeposit);
+                console.log('Security deposit status:', { hasDeposit });
 
                 // If user has a successful payment and is not already verified, update their verification status
                 if (hasDeposit && !session?.user?.isVerified) {
                     try {
+                        console.log('Updating user verification status...');
                         const verifyResponse = await fetch('/api/user/verify', {
                             method: 'POST',
                             headers: {
@@ -84,6 +98,7 @@ const MyBookingsPage = () => {
 
                         if (verifyResponse.ok) {
                             const verifyData = await verifyResponse.json();
+                            console.log('Successfully verified user');
                             // Update the session with the verified status
                             await update({
                                 ...session,
@@ -92,9 +107,15 @@ const MyBookingsPage = () => {
                                     isVerified: true
                                 }
                             });
+                            toast.success('Your account has been verified');
+                        } else {
+                            const errorData = await verifyResponse.json();
+                            console.error('Failed to verify user:', errorData);
+                            toast.error('Failed to verify your account');
                         }
                     } catch (error) {
                         console.error('Error updating verification status:', error);
+                        toast.error('Failed to update verification status');
                     }
                 }
             } catch (error) {

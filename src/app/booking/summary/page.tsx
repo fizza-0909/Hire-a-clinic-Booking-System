@@ -19,6 +19,7 @@ interface PriceBreakdown {
     tax: number;
     securityDeposit: number;
     total: number;
+    isFirstBooking: boolean;
 }
 
 interface BookingData {
@@ -29,30 +30,35 @@ interface BookingData {
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
-const calculatePriceBreakdown = (rooms: Room[], type: BookingType): PriceBreakdown => {
+const calculatePriceBreakdown = (rooms: Room[], bookingType: BookingType, isVerified: boolean) => {
+    // Base prices for daily bookings
+    const fullDayPrice = 300;
+    const halfDayPrice = 160;
+
+    // Only add security deposit if user is not verified
+    const securityDeposit = isVerified ? 0 : 250;
+
     let subtotal = 0;
 
+    // Calculate subtotal based on room selections
     rooms.forEach(room => {
-        if (room.dates.length === 0) return;
-
-        const basePrice = PRICING[type][room.timeSlot];
-
-        if (type === 'daily') {
-            subtotal += basePrice * room.dates.length;
-        } else {
-            subtotal += basePrice;
-        }
+        const basePrice = room.timeSlot === 'full' ? fullDayPrice : halfDayPrice;
+        const daysCount = room.dates.length;
+        subtotal += basePrice * daysCount;
     });
 
-    const tax = subtotal * PRICING.taxRate;
-    const securityDeposit = 250; // Security deposit for first booking
-    const total = subtotal + tax + securityDeposit;
+    // Calculate tax
+    const tax = subtotal * 0.035; // 3.5% tax
+
+    // Calculate total
+    const total = Math.round((subtotal + tax + securityDeposit) * 100) / 100;
 
     return {
-        subtotal,
-        tax,
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax: Math.round(tax * 100) / 100,
         securityDeposit,
-        total
+        total,
+        isFirstBooking: !isVerified
     };
 };
 
@@ -67,7 +73,8 @@ const SummaryPage = () => {
         subtotal: 0,
         tax: 0,
         securityDeposit: 0,
-        total: 0
+        total: 0,
+        isFirstBooking: false
     });
 
     useEffect(() => {
@@ -89,7 +96,15 @@ const SummaryPage = () => {
             setSelectedRooms(bookingData.rooms);
             setBookingType(bookingData.bookingType);
 
-            const priceBreakdownData = calculatePriceBreakdown(bookingData.rooms, bookingData.bookingType);
+            // Get the verification status from the session
+            const isVerified = session?.user?.isVerified ?? false;
+            console.log('User verification status:', { isVerified });
+
+            const priceBreakdownData = calculatePriceBreakdown(
+                bookingData.rooms,
+                bookingData.bookingType,
+                isVerified
+            );
             setPriceBreakdown(priceBreakdownData);
 
             const updatedBookingData = {
@@ -102,7 +117,7 @@ const SummaryPage = () => {
             toast.error('Invalid booking data');
             router.push('/booking');
         }
-    }, [router, status]);
+    }, [router, status, session?.user?.isVerified]);
 
     const handleRemoveDate = (roomId: number, dateToRemove: string) => {
         if (bookingType !== 'daily') {
@@ -127,7 +142,7 @@ const SummaryPage = () => {
         }
 
         setSelectedRooms(updatedRooms);
-        const newPriceBreakdown = calculatePriceBreakdown(updatedRooms, bookingType);
+        const newPriceBreakdown = calculatePriceBreakdown(updatedRooms, bookingType, session?.user?.isVerified || false);
         setPriceBreakdown(newPriceBreakdown);
 
         const bookingData = {
@@ -169,7 +184,8 @@ const SummaryPage = () => {
             console.log('Current state:', {
                 selectedRooms,
                 bookingType,
-                priceBreakdown
+                priceBreakdown,
+                isVerified: session?.user?.isVerified
             });
 
             // Ensure all rooms have dates
@@ -191,13 +207,14 @@ const SummaryPage = () => {
                         dates: [...room.dates] // Ensure dates are properly copied
                     })),
                     bookingType,
-                    totalAmount: priceBreakdown.total
+                    totalAmount: priceBreakdown.total,
+                    includesSecurityDeposit: !session?.user?.isVerified
                 }
             };
 
             console.log('Sending payment request:', JSON.stringify(paymentData, null, 2));
 
-            const response = await fetch('/api/create-payment-intent', {
+            const response = await fetch('/api/payment/intent', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -232,7 +249,8 @@ const SummaryPage = () => {
                     subtotal: priceBreakdown.subtotal,
                     tax: priceBreakdown.tax,
                     securityDeposit: priceBreakdown.securityDeposit,
-                    total: priceBreakdown.total
+                    total: priceBreakdown.total,
+                    isFirstBooking: priceBreakdown.isFirstBooking
                 }
             };
 
@@ -348,31 +366,35 @@ const SummaryPage = () => {
                                     <span>Tax (3.5%)</span>
                                     <span>${priceBreakdown.tax.toFixed(2)}</span>
                                 </div>
-                                <div className="flex justify-between text-gray-600">
-                                    <div className="flex-1">
-                                        <div className="flex items-center">
-                                            <span>Security Deposit</span>
-                                            <div className="ml-2 group relative">
-                                                <svg className="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                                <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg">
-                                                    Security deposit is only charged for your first booking. It will be refunded according to our policy.
+                                {!session?.user?.isVerified && (
+                                    <div className="flex justify-between text-gray-600">
+                                        <div className="flex-1">
+                                            <div className="flex items-center">
+                                                <span>Security Deposit</span>
+                                                <div className="ml-2 group relative">
+                                                    <svg className="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg">
+                                                        Security deposit is only charged for your first booking. It will be refunded according to our policy.
+                                                    </div>
                                                 </div>
                                             </div>
+                                            <div className="text-xs text-blue-600 font-medium">First Booking Only - Refundable</div>
                                         </div>
-                                        <div className="text-xs text-blue-600 font-medium">First Booking Only - Refundable</div>
+                                        <span>${priceBreakdown.securityDeposit.toFixed(2)}</span>
                                     </div>
-                                    <span>${priceBreakdown.securityDeposit.toFixed(2)}</span>
-                                </div>
+                                )}
                                 <div className="border-t border-gray-200 pt-3">
                                     <div className="flex justify-between font-semibold">
                                         <span>Total</span>
                                         <span className="text-blue-600">${priceBreakdown.total.toFixed(2)}</span>
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        *Security deposit of $250 is included in the total as this is your first booking
-                                    </p>
+                                    {!session?.user?.isVerified && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            *Security deposit of $250 is included in the total as this is your first booking
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>
