@@ -416,7 +416,6 @@ const CalendarPage: React.FC = () => {
 
     const calculatePrice = () => {
         let subtotal = 0;
-        let securityDeposit = 0;
 
         // Calculate subtotal based on rooms and dates
         selectedRooms.forEach(room => {
@@ -433,13 +432,11 @@ const CalendarPage: React.FC = () => {
             }
         });
 
-        // Add security deposit only once if there are any rooms with dates
-        if (selectedRooms.some(room => (room.dates?.length || 0) > 0)) {
-            securityDeposit = PRICING.securityDeposit;
-        }
-
         // Calculate tax
         const tax = subtotal * PRICING.taxRate;
+
+        // Calculate security deposit - $250 per room for first booking
+        const securityDeposit = PRICING.securityDeposit * selectedRooms.length;
 
         // Return all price components
         return {
@@ -1026,20 +1023,13 @@ const CalendarPage: React.FC = () => {
                                             <span>Tax (3.5%):</span>
                                             <span>+ ${calculatePrice().tax.toFixed(2)}</span>
                                         </div>
-                                        <div className="flex justify-between items-center text-sm text-gray-600">
-                                            <div>
-                                                <span>Security Deposit</span>
-                                                <div className="text-xs text-gray-500">($250 one-time, refundable)</div>
-                                            </div>
-                                            <span>+ ${calculatePrice().securityDeposit.toFixed(2)}</span>
-                                        </div>
                                         <div className="border-t border-gray-200 pt-3 mt-3">
                                             <div className="flex justify-between font-semibold">
                                                 <span>Total Price:</span>
                                                 <span className="text-blue-600">${calculatePrice().total.toFixed(2)}</span>
                                             </div>
                                             <div className="text-xs text-gray-500 mt-1">
-                                                *Security deposit will be refunded after inspection
+                                                *A refundable security deposit of $250 will be charged at the time of Registeration only
                                             </div>
                                         </div>
                                     </div>

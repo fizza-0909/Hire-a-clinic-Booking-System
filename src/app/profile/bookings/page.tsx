@@ -75,7 +75,7 @@ const MyBookingsPage = () => {
                 `Date: ${formatDate(booking.date)}`,
                 `Time Slot: ${getTimeSlotText(booking.timeSlot)}`,
                 `Booking Type: ${booking.bookingType.charAt(0).toUpperCase() + booking.bookingType.slice(1)}`,
-                `Amount Paid: $${booking.amount.toFixed(2)}`,
+                `Amount Paid: $${(booking.amount ?? 0).toFixed(2)}`,
                 `Booking Date: ${new Date(booking.createdAt).toLocaleString()}`,
                 '',
                 '=== ADDITIONAL INFORMATION ===',
@@ -162,7 +162,9 @@ const MyBookingsPage = () => {
                                     </div>
                                     <div>
                                         <span className="text-gray-600 text-sm">Amount</span>
-                                        <p className="font-semibold">${booking.amount.toFixed(2)}</p>
+                                        <p className="font-semibold">
+                                            ${(booking.amount ?? 0).toFixed(2)}
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="mt-4 pt-4 border-t border-gray-100">

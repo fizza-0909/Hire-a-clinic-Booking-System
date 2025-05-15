@@ -31,7 +31,6 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 
 const calculatePriceBreakdown = (rooms: Room[], type: BookingType): PriceBreakdown => {
     let subtotal = 0;
-    let securityDeposit = 0;
 
     rooms.forEach(room => {
         if (room.dates.length === 0) return;
@@ -45,17 +44,13 @@ const calculatePriceBreakdown = (rooms: Room[], type: BookingType): PriceBreakdo
         }
     });
 
-    if (rooms.some(room => room.dates.length > 0)) {
-        securityDeposit = PRICING.securityDeposit;
-    }
-
     const tax = subtotal * PRICING.taxRate;
-    const total = subtotal + tax + securityDeposit;
+    const total = subtotal + tax;
 
     return {
         subtotal,
         tax,
-        securityDeposit,
+        securityDeposit: 0,
         total
     };
 };
@@ -66,6 +61,7 @@ const SummaryPage = () => {
     const [selectedRooms, setSelectedRooms] = useState<Room[]>([]);
     const [bookingType, setBookingType] = useState<BookingType>('daily');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [priceBreakdown, setPriceBreakdown] = useState<PriceBreakdown>({
         subtotal: 0,
         tax: 0,
@@ -154,6 +150,11 @@ const SummaryPage = () => {
     };
 
     const handleProceedToPayment = async () => {
+        if (!acceptedTerms) {
+            toast.error('Please accept the Terms and Conditions to proceed');
+            return;
+        }
+
         try {
             setIsProcessing(true);
             console.log('Starting payment process...');
@@ -229,7 +230,7 @@ const SummaryPage = () => {
                 priceBreakdown: {
                     subtotal: priceBreakdown.subtotal,
                     tax: priceBreakdown.tax,
-                    securityDeposit: priceBreakdown.securityDeposit,
+                    securityDeposit: 0,
                     total: priceBreakdown.total
                 }
             };
@@ -343,7 +344,7 @@ const SummaryPage = () => {
                                     <span>Tax (3.5%)</span>
                                     <span>${priceBreakdown.tax.toFixed(2)}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-gray-600">
+                                <div className="flex justify-between text-gray-600">
                                     <div>
                                         <span>Security Deposit</span>
                                         <div className="text-xs text-gray-500">(Refundable)</div>
@@ -359,12 +360,39 @@ const SummaryPage = () => {
                             </div>
                         </div>
 
+                        {/* Terms and Conditions Section */}
+                        <div className="border-t border-gray-200 pt-6 mb-8">
+                            <h2 className="text-xl font-semibold mb-4">Terms and Conditions</h2>
+                            <div className="space-y-3 text-sm text-gray-700 mb-6">
+                                <p className="mb-2">• Payments are non-refundable. Only the security deposit is refundable as per policy.</p>
+                                <p className="mb-2">• Renters are responsible for the equipment and space during their booked time slot.</p>
+                                <p className="mb-2">• Clinic owners must maintain a safe and professional environment.</p>
+                                <p className="mb-2">• Renters must respect booking times. If a renter arrives late, extra time will not be provided or compensated.</p>
+                                <p className="mb-2">• Any damages or misuse of the clinic will be deducted from the security deposit.</p>
+                                <p className="mb-2">• All users must follow platform policies regarding cancellations and conduct.</p>
+                            </div>
+
+                            {/* Terms Acceptance Checkbox */}
+                            <div className="flex items-start space-x-3 mb-6">
+                                <input
+                                    type="checkbox"
+                                    id="acceptTerms"
+                                    checked={acceptedTerms}
+                                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                    className="mt-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                />
+                                <label htmlFor="acceptTerms" className="text-sm text-gray-700">
+                                    By confirming this booking, I acknowledge that I have read and agree to all the above Terms and Conditions.
+                                </label>
+                            </div>
+                        </div>
+
                         <div className="mt-8">
                             <button
                                 onClick={handleProceedToPayment}
-                                disabled={isProcessing}
+                                disabled={isProcessing || !acceptedTerms}
                                 className={`w-full flex items-center justify-center py-4 px-6 rounded-lg text-white font-medium 
-                                    ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} 
+                                    ${(isProcessing || !acceptedTerms) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} 
                                     transition-colors duration-200`}
                             >
                                 {isProcessing ? (

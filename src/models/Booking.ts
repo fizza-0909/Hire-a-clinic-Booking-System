@@ -1,53 +1,45 @@
-import mongoose from 'mongoose';
+import { Schema, model, models } from 'mongoose';
+import { TimeSlot, BookingType } from '@/constants/pricing';
 
-const bookingSchema = new mongoose.Schema({
+const bookingSchema = new Schema({
     userId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         ref: 'User',
-        required: [true, 'User ID is required']
+        required: true
     },
-    roomId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Room',
-        required: [true, 'Room ID is required']
-    },
-    dates: [{
-        type: String,
-        required: [true, 'Booking dates are required']
+    rooms: [{
+        id: Number,
+        name: String,
+        timeSlot: {
+            type: String,
+            enum: ['full', 'morning', 'evening'],
+            required: true
+        },
+        dates: [{
+            type: String,
+            required: true
+        }]
     }],
-    timeSlot: {
+    bookingType: {
         type: String,
-        enum: ['full', 'morning', 'evening'],
-        required: [true, 'Time slot is required']
-    },
-    status: {
-        type: String,
-        enum: ['pending', 'confirmed', 'cancelled', 'failed'],
-        default: 'pending'
+        enum: ['daily', 'monthly'],
+        required: true
     },
     totalAmount: {
         type: Number,
-        required: [true, 'Total amount is required'],
-        min: [0, 'Total amount cannot be negative']
-    },
-    paymentDetails: {
-        stripePaymentIntentId: {
-            type: String,
-            required: true
-        },
-        status: {
-            type: String,
-            enum: ['pending', 'paid', 'failed'],
-            default: 'pending'
-        },
-        paidAt: Date,
-        failedAt: Date
-    },
-    bookingType: {
-        type: String,
-        enum: ['fullDay', 'halfDay'],
         required: true
     },
+    status: {
+        type: String,
+        enum: ['pending', 'confirmed', 'cancelled'],
+        default: 'pending'
+    },
+    paymentStatus: {
+        type: String,
+        enum: ['pending', 'completed', 'failed'],
+        default: 'pending'
+    },
+    paymentIntentId: String,
     createdAt: {
         type: Date,
         default: Date.now
@@ -83,4 +75,5 @@ bookingSchema.pre('save', async function (next) {
     next();
 });
 
-export const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema); 
+export const Booking = models.Booking || model('Booking', bookingSchema);
+export default Booking; 

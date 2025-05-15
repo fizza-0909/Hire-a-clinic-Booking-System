@@ -8,6 +8,7 @@ declare module "next-auth" {
             name: string;
             firstName: string;
             lastName: string;
+            phoneNumber?: string;
         }
     }
 
@@ -17,5 +18,6 @@ declare module "next-auth" {
         name: string;
         firstName: string;
         lastName: string;
+        phoneNumber?: string;
     }
 } 

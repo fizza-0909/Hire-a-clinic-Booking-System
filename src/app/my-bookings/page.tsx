@@ -130,7 +130,7 @@ const MyBookingsPage = () => {
                 dates: booking.dates
             }],
             totalAmount: total,
-            bookingType: booking.dates.length > 1 ? 'monthly' : 'daily',
+            bookingType: 'daily', // Always set to daily for individual bookings
             bookingDate: booking.createdAt,
             priceBreakdown: {
                 subtotal: subtotal,

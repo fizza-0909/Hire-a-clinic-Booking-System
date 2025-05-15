@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import Header from '@/components/Header';
 import jsPDF from 'jspdf';
+import { useSession } from 'next-auth/react';
 
 interface BookingDetails {
     rooms: Array<{
@@ -37,9 +38,15 @@ const PRICING = {
 
 const ConfirmationPage = () => {
     const router = useRouter();
+    const { data: session } = useSession();
     const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    // Define user information
+    const userName = session?.user ? `${session.user.firstName} ${session.user.lastName}` : 'N/A';
+    const userEmail = session?.user?.email || 'N/A';
+    const userPhone = session?.user?.phoneNumber || 'N/A';
 
     useEffect(() => {
         try {
@@ -170,110 +177,100 @@ const ConfirmationPage = () => {
 
         yPos = 45;
 
-        // --- Booking Info Section ---
+        // --- Customer Details Section ---
         pdf.setFontSize(12);
         pdf.setFont("helvetica", "bold");
         pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Booking Information", margin, yPos);
+        pdf.text("Customer Details", margin, yPos);
         yPos += 8;
 
-        pdf.setFillColor(softBlue[0], softBlue[1], softBlue[2]);
-        pdf.roundedRect(margin, yPos, pageWidth - margin * 2, 70, 3, 3, 'F');
-
-        pdf.setFontSize(11);
         pdf.setFont("helvetica", "normal");
         pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
+        pdf.text(`Name: ${userName}`, margin, yPos + 8);
+        pdf.text(`Email: ${userEmail}`, margin, yPos + 16);
+        pdf.text(`Phone: ${userPhone || 'N/A'}`, margin, yPos + 24);
+        pdf.text(`Booking Number: MAO${Date.now().toString(36).toUpperCase().slice(0, 5)}`, margin, yPos + 32);
 
-        const bookingNumber = `MAO${Date.now().toString(36).toUpperCase().slice(0, 5)}`;
-        pdf.text(`Booking Number: ${bookingNumber}`, margin + 6, yPos + 12);
+        yPos += 50;
 
+        // --- Booking Summary Section ---
         pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Customer Details:", margin + 6, yPos + 26);
-
-        const user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null;
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text(`  Name: ${user ? `${user.firstName} ${user.lastName}` : 'N/A'}`, margin + 6, yPos + 38);
-        pdf.text(`  Email: ${user?.email || 'N/A'}`, margin + 6, yPos + 50);
-        pdf.text(`  Phone: ${user?.phoneNumber || 'N/A'}`, margin + 6, yPos + 62);
-
-        yPos += 80;
-
-        // --- Booking Summary ---
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(12);
         pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
         pdf.text("Booking Summary", margin, yPos);
-        yPos += 10;
+        yPos += 8;
 
         pdf.setFont("helvetica", "normal");
         pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        const bookingDate = new Date().toLocaleString('en-US', {
-            year: 'numeric', month: 'numeric', day: 'numeric',
-            hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true
-        });
-        pdf.text(`Date: ${bookingDate}`, margin, yPos);
-        pdf.text(`Type: ${booking.bookingType.charAt(0).toUpperCase() + booking.bookingType.slice(1)}`, margin, yPos + 12);
-        yPos += 28;
+        pdf.text(`Booking Type: Daily`, margin, yPos + 8);
+        pdf.text(`Booking Date: ${formatDate(new Date().toISOString())}`, margin, yPos + 16);
 
-        // --- Room Details Header ---
+        yPos += 34;
+
+        // --- Room Details Section ---
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(12);
         pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
         pdf.text("Room Details", margin, yPos);
-        yPos += 10;
+        yPos += 8;
 
-        pdf.setFillColor(softBlue[0], softBlue[1], softBlue[2]);
-        pdf.roundedRect(margin, yPos, pageWidth - margin * 2, 20, 3, 3, 'F');
-
-        pdf.setFontSize(11);
-        const roomCol = margin + 6;
-        const timeCol = margin + 75;
-        const dateCol = margin + 150;
-
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text("Room", roomCol, yPos + 13);
-        pdf.text("Time Slot", timeCol, yPos + 13);
-        pdf.text("Date", dateCol, yPos + 13);
-        yPos += 24;
-
-        // --- Room Entries ---
-        pdf.setFont("helvetica", "normal");
         booking.rooms.forEach((room) => {
-            if (yPos + 20 > pdf.internal.pageSize.height) {
-                pdf.addPage();
-                yPos = 20;
-            }
-
-            const formattedDate = new Date(room.dates[0]).toLocaleDateString('en-US', {
-                year: 'numeric', month: 'numeric', day: 'numeric'
-            });
-            pdf.text(`Room ${room.id}`, roomCol, yPos);
-            pdf.text(getTimeSlotText(room.timeSlot), timeCol, yPos);
-            pdf.text(formattedDate, dateCol, yPos);
-            yPos += 14;
+            pdf.setFont("helvetica", "normal");
+            pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
+            pdf.text(`Room ${room.name}`, margin, yPos + 8);
+            pdf.text(`Time Slot: ${getTimeSlotText(room.timeSlot)}`, margin, yPos + 16);
+            pdf.text(`Dates: ${room.dates.map(date => formatDate(date)).join(', ')}`, margin, yPos + 24);
+            yPos += 32;
         });
 
-        yPos += 10;
-
-        // --- Payment Section ---
+        // --- Payment Details Section ---
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(12);
         pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
         pdf.text("Payment Details", margin, yPos);
         yPos += 8;
 
-        pdf.setFillColor(softBlue[0], softBlue[1], softBlue[2]);
-        pdf.roundedRect(margin, yPos, pageWidth - margin * 2, 30, 3, 3, 'F');
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
+        pdf.text(`Subtotal: $${booking.priceBreakdown.subtotal.toFixed(2)}`, margin, yPos + 8);
+        pdf.text(`Tax: $${booking.priceBreakdown.tax.toFixed(2)}`, margin, yPos + 16);
+        pdf.text(`Security Deposit (Refundable): $${booking.priceBreakdown.securityDeposit.toFixed(2)}`, margin, yPos + 24);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(`Total Amount: $${booking.priceBreakdown.total.toFixed(2)}`, margin, yPos + 36);
+
+        yPos += 50;
+
+        // Check if we need a new page for Terms and Conditions
+        if (yPos > pdf.internal.pageSize.height - 100) {
+            pdf.addPage();
+            yPos = 20;
+        }
+
+        // --- Terms and Conditions Section ---
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+        pdf.text("Terms and Conditions", margin, yPos);
+        yPos += 12;
 
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(11);
+        pdf.setFontSize(10);
         pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        const total = booking.priceBreakdown.total - booking.priceBreakdown.securityDeposit;
-        pdf.text(`Total Amount: $${total.toFixed(2)}`, margin + 6, yPos + 12);
-        pdf.text(`Security Deposit: $${booking.priceBreakdown.securityDeposit.toFixed(2)} (Refundable)`, margin + 6, yPos + 24);
+
+        const terms = [
+            "• Payments are non-refundable. Only the security deposit is refundable as per policy.",
+            "• Renters are responsible for the equipment and space during their booked time slot.",
+            "• Clinic owners must maintain a safe and professional environment.",
+            "• Renters must respect booking times. If a renter arrives late, extra time will not be provided or compensated.",
+            "• Any damages or misuse of the clinic will be deducted from the security deposit.",
+            "• All users must follow platform policies regarding cancellations and conduct."
+        ];
+
+        terms.forEach((term) => {
+            if (yPos > pdf.internal.pageSize.height - 20) {
+                pdf.addPage();
+                yPos = 20;
+            }
+            const lines = pdf.splitTextToSize(term, pageWidth - (margin * 2));
+            pdf.text(lines, margin, yPos);
+            yPos += (lines.length * 6) + 6;
+        });
 
         return pdf;
     };
@@ -343,99 +340,123 @@ const ConfirmationPage = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-            {/* Header */}
-            <header className="sticky top-0 left-0 right-0 z-50 bg-white shadow-md">
-                <Header />
-            </header>
+        <div className="min-h-screen bg-gray-50">
+            <Header />
+            <div className="max-w-4xl mx-auto p-6 space-y-8">
+                {/* Back Button */}
+                <button
+                    onClick={() => router.push('/booking')}
+                    className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+                    </svg>
+                    Back to Booking
+                </button>
 
-            {/* Main Content */}
-            <main className="container mx-auto px-4 py-12">
-                <div className="max-w-4xl mx-auto">
-                    <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12 mb-8">
-                        <div className="text-center mb-16">
-                            <div className="w-32 h-32 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-10 shadow-lg transform hover:scale-105 transition-transform duration-200">
-                                <svg className="w-16 h-16 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                            </div>
-                            <h1 className="text-4xl font-bold text-gray-800 mb-4">Booking Confirmed!</h1>
-                            <p className="text-lg text-gray-600 mb-2">Your booking has been successfully completed</p>
-                            <p className="text-sm text-gray-500">Booking Date: {formatDate(bookingDetails.bookingDate || new Date().toISOString())}</p>
-                        </div>
+                <h1 className="text-3xl font-bold text-center text-blue-600">HIRE A CLINIC</h1>
+                <h2 className="text-xl text-center text-gray-700 mb-8">Booking Confirmation</h2>
 
-                        <div className="mb-12">
-                            <h2 className="text-2xl font-semibold border-b border-gray-200 pb-4 mb-8">Booking Details</h2>
-                            {bookingDetails.rooms.map((room) => (
-                                <div key={room.id} className="bg-gray-50 rounded-xl p-6 md:p-8 mb-6 hover:shadow-md transition-shadow duration-200">
-                                    <h3 className="text-xl font-semibold mb-6 text-gray-800">{room.name}</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div className="bg-white rounded-lg p-5 shadow-sm">
-                                            <span className="text-gray-600 text-sm block mb-2">Time Slot:</span>
-                                            <p className="font-medium text-gray-800">{getTimeSlotText(room.timeSlot)}</p>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-5 shadow-sm">
-                                            <span className="text-gray-600 text-sm block mb-2">Booking Type:</span>
-                                            <p className="font-medium text-gray-800 capitalize">{bookingDetails.bookingType}</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-8">
-                                        <span className="text-gray-600 text-sm block mb-4">Selected Dates:</span>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {room.dates.map((date) => (
-                                                <div key={date} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                                                    <span className="text-gray-800">{formatDate(date)}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                {isLoading ? (
+                    <div className="flex justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                ) : bookingDetails ? (
+                    <div className="space-y-8">
+                        {/* Customer Details Section */}
+                        <section className="bg-white rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Customer Details</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-sm text-gray-600">Name</p>
+                                    <p className="font-medium">{userName}</p>
                                 </div>
-                            ))}
-                        </div>
-
-                        <div className="border-t border-gray-200 pt-10 mb-12">
-                            <h2 className="text-2xl font-semibold mb-8">Payment Summary</h2>
-                            <div className="bg-blue-50 p-8 rounded-xl shadow-inner">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-lg font-medium text-gray-700">Total Amount Paid:</span>
-                                    <span className="text-3xl font-bold text-blue-600">
-                                        ${getDisplayAmount(bookingDetails)}
-                                    </span>
+                                <div>
+                                    <p className="text-sm text-gray-600">Email</p>
+                                    <p className="font-medium">{userEmail}</p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-600">Phone</p>
+                                    <p className="font-medium">{userPhone || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-600">Booking Number</p>
+                                    <p className="font-medium">{'MAO' + Date.now().toString(36).toUpperCase().slice(0, 5)}</p>
                                 </div>
                             </div>
-                        </div>
+                        </section>
 
-                        <div className="flex flex-col sm:flex-row justify-center gap-6 pt-4">
+                        {/* Booking Summary Section */}
+                        <section className="bg-white rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Booking Summary</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <p className="text-sm text-gray-600">Booking Type</p>
+                                    <p className="font-medium capitalize">{bookingDetails.bookingType}</p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-600">Booking Date</p>
+                                    <p className="font-medium">{formatDate(new Date().toISOString())}</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Room Details Section */}
+                        <section className="bg-white rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Room Details</h3>
+                            <div className="space-y-4">
+                                {bookingDetails.rooms.map((room, index) => (
+                                    <div key={index} className="border-b pb-4 last:border-b-0">
+                                        <p className="font-medium">Room {room.name}</p>
+                                        <p className="text-sm text-gray-600">Time Slot: {getTimeSlotText(room.timeSlot)}</p>
+                                        <p className="text-sm text-gray-600">
+                                            Dates: {room.dates.map(date => formatDate(date)).join(', ')}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Payment Details Section */}
+                        <section className="bg-white rounded-lg shadow p-6">
+                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Payment Details</h3>
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Subtotal</span>
+                                    <span>${bookingDetails.priceBreakdown.subtotal.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Tax</span>
+                                    <span>${bookingDetails.priceBreakdown.tax.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Security Deposit (Refundable)</span>
+                                    <span>${bookingDetails.priceBreakdown.securityDeposit.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between font-semibold text-lg pt-2 border-t">
+                                    <span>Total Amount</span>
+                                    <span>${bookingDetails.priceBreakdown.total.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Download Button */}
+                        <div className="flex justify-center pt-4">
                             <button
                                 onClick={handleDownload}
                                 disabled={isDownloading}
-                                className={`inline-flex items-center justify-center px-8 py-4 rounded-xl text-white text-lg font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 ${isDownloading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                                    }`}
+                                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
                             >
-                                {isDownloading ? (
-                                    <>
-                                        <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-white mr-3"></div>
-                                        Downloading...
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
-                                        Download Confirmation
-                                    </>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => router.push('/')}
-                                className="inline-flex items-center justify-center px-8 py-4 bg-gray-100 text-gray-700 rounded-xl text-lg font-medium hover:bg-gray-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200"
-                            >
-                                Back to Main Page
+                                {isDownloading ? 'Generating PDF...' : 'Download Confirmation'}
                             </button>
                         </div>
                     </div>
-                </div>
-            </main>
+                ) : (
+                    <div className="text-center text-gray-600">
+                        No booking details found
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

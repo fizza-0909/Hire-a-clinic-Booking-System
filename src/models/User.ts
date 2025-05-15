@@ -1,25 +1,7 @@
-import mongoose from 'mongoose';
+import { Schema, model, models } from 'mongoose';
 import { hash } from 'bcryptjs';
 
-const userSchema = new mongoose.Schema({
-    email: {
-        type: String,
-        required: [true, 'Email is required'],
-        unique: true,
-        lowercase: true,
-        trim: true,
-        validate: {
-            validator: function (v: string) {
-                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-            },
-            message: 'Please enter a valid email'
-        }
-    },
-    password: {
-        type: String,
-        required: [true, 'Password is required'],
-        minlength: [8, 'Password must be at least 8 characters long']
-    },
+const userSchema = new Schema({
     firstName: {
         type: String,
         required: [true, 'First name is required'],
@@ -30,13 +12,49 @@ const userSchema = new mongoose.Schema({
         required: [true, 'Last name is required'],
         trim: true
     },
+    email: {
+        type: String,
+        required: [true, 'Email is required'],
+        unique: true,
+        trim: true,
+        lowercase: true,
+        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email']
+    },
+    password: {
+        type: String,
+        required: [true, 'Password is required'],
+        select: false
+    },
     phoneNumber: {
         type: String,
         trim: true
     },
-    hasBookings: {
-        type: Boolean,
-        default: false
+    address: {
+        type: String,
+        trim: true
+    },
+    city: {
+        type: String,
+        trim: true
+    },
+    state: {
+        type: String,
+        trim: true
+    },
+    zipCode: {
+        type: String,
+        trim: true
+    },
+    bio: {
+        type: String,
+        trim: true,
+        maxLength: [500, 'Bio cannot be longer than 500 characters']
+    },
+    preferences: {
+        emailNotifications: {
+            type: Boolean,
+            default: true
+        }
     },
     createdAt: {
         type: Date,
@@ -55,6 +73,7 @@ userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {
         return next();
     }
+
     try {
         this.password = await hash(this.password, 12);
         next();
@@ -63,13 +82,11 @@ userSchema.pre('save', async function (next) {
     }
 });
 
-// Don't return password in JSON
-userSchema.set('toJSON', {
-    transform: function (doc, ret) {
-        delete ret.password;
-        return ret;
-    }
+// Create full name virtual
+userSchema.virtual('fullName').get(function () {
+    return `${this.firstName} ${this.lastName}`;
 });
 
-const User = mongoose.models.User || mongoose.model('User', userSchema);
+const User = models.User || model('User', userSchema);
+
 export default User; 

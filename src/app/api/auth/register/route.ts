@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongoose';
 import User from '@/models/User';
+import { sendEmail, getRegistrationConfirmationEmail } from '@/lib/email';
 
 export async function POST(req: Request) {
     console.log('Starting registration process...');
@@ -86,6 +87,26 @@ export async function POST(req: Request) {
             password,
             hasBookings: false
         });
+
+        // Send welcome email
+        try {
+            const { subject, html } = getRegistrationConfirmationEmail({
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email
+            });
+
+            await sendEmail({
+                to: user.email,
+                subject,
+                html
+            });
+
+            console.log('Registration confirmation email sent successfully');
+        } catch (error) {
+            console.error('Failed to send registration confirmation email:', error);
+            // Don't throw error here as registration is still successful
+        }
 
         console.log('User created successfully:', user._id.toString());
         return NextResponse.json({
