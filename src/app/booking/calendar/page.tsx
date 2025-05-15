@@ -227,10 +227,6 @@ const CalendarPage: React.FC = () => {
                 return;
             }
 
-            if (dates.length < 30) {
-                toast.error(`Only ${dates.length} available days found within the next ${maxDaysToCheck} days`);
-            }
-
             // Update selected rooms with available dates
             setSelectedRooms(prev =>
                 prev.map(r => {
@@ -242,7 +238,7 @@ const CalendarPage: React.FC = () => {
             );
             toast.success(`Selected ${dates.length} days starting from ${formatDisplayDate(dates[0])}`);
         } else {
-            // Original daily booking logic
+            // Daily booking logic
             const year = normalizedDate.getFullYear();
             const month = String(normalizedDate.getMonth() + 1).padStart(2, '0');
             const day = String(normalizedDate.getDate()).padStart(2, '0');
@@ -621,20 +617,20 @@ const CalendarPage: React.FC = () => {
             return;
         }
 
-        if (selectedRooms.length === 0) {
-            toast.error('Please select at least one room');
-            return;
-        }
-
+        // Filter rooms that have dates selected
         const roomsWithDates = selectedRooms.filter(room => room.dates && room.dates.length > 0);
+        const roomsWithoutDates = selectedRooms.filter(room => !room.dates || room.dates.length === 0);
+
+        // Check if at least one room has dates
         if (roomsWithDates.length === 0) {
             toast.error('Please select dates for at least one room');
             return;
         }
 
         try {
+            // Only include rooms that have dates selected in the booking data
             const bookingData = {
-                rooms: selectedRooms.map(room => ({
+                rooms: roomsWithDates.map(room => ({
                     id: room.id,
                     timeSlot: room.timeSlot,
                     dates: room.dates || []
@@ -647,6 +643,19 @@ const CalendarPage: React.FC = () => {
             sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
             sessionStorage.removeItem('selectedRooms');
             sessionStorage.removeItem('bookingType');
+
+            // Show warning if some rooms don't have dates
+            if (roomsWithoutDates.length > 0) {
+                toast(`${roomsWithoutDates.length} room(s) without dates will not be included in the booking`, {
+                    duration: 4000,
+                    icon: '⚠️',
+                    style: {
+                        background: '#fff7ed',
+                        color: '#9a3412',
+                        border: '1px solid #fdba74'
+                    }
+                });
+            }
 
             toast.success('Proceeding to booking summary...');
             router.push('/booking/summary');
@@ -764,11 +773,32 @@ const CalendarPage: React.FC = () => {
             {/* Header */}
             <header className="sticky top-0 left-0 right-0 z-50 bg-white shadow-md">
                 <Header />
+                {/* Navigation Buttons */}
+                <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+                    <button
+                        onClick={() => router.push('/')}
+                        className="flex items-center px-4 py-2 text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                    >
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                        </svg>
+                        Back to Home
+                    </button>
+                    <button
+                        onClick={() => router.push('/booking')}
+                        className="flex items-center px-4 py-2 text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                    >
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Make New Booking
+                    </button>
+                </div>
             </header>
 
             {/* Main Content */}
             <main className="container mx-auto px-4 py-8">
-                <div className="max-w-6xl mx-auto">
+                <div className="max-w-7xl mx-auto">
                     {selectedRooms.length === 0 && (
                         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-center">
                             <div className="flex items-center justify-center text-red-600 mb-2">
@@ -1054,22 +1084,33 @@ const CalendarPage: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* Add proceed button */}
+                                    {/* Proceed Button */}
                                     <div className="mt-6">
                                         <button
                                             onClick={handleProceed}
-                                            disabled={selectedRooms.length === 0 || selectedRooms.every(room => !room.dates?.length)}
-                                            className={`w-full py-3 px-4 rounded-lg text-white font-medium ${selectedRooms.length === 0 || selectedRooms.every(room => !room.dates?.length)
+                                            disabled={!selectedRooms.some(room => room.dates?.length > 0)}
+                                            className={`w-full py-3 px-4 rounded-lg text-white font-medium ${!selectedRooms.some(room => room.dates?.length > 0)
                                                 ? 'bg-gray-300 cursor-not-allowed'
                                                 : 'bg-blue-600 hover:bg-blue-700 transition-colors duration-200'
                                                 }`}
                                         >
                                             {selectedRooms.length === 0
                                                 ? 'Select a Room to Proceed'
-                                                : selectedRooms.every(room => !room.dates?.length)
-                                                    ? 'Select Dates to Proceed'
+                                                : !selectedRooms.some(room => room.dates?.length > 0)
+                                                    ? 'Select at Least One Date to Proceed'
                                                     : 'Proceed to Booking Summary'}
                                         </button>
+                                        {selectedRooms.length > 0 && !selectedRooms.some(room => room.dates?.length > 0) && (
+                                            <p className="text-sm text-gray-600 mt-2 text-center">
+                                                Please select dates for at least one room to proceed
+                                            </p>
+                                        )}
+                                        {selectedRooms.some(room => !room.dates || room.dates.length === 0) &&
+                                            selectedRooms.some(room => room.dates?.length > 0) && (
+                                                <p className="text-sm text-blue-600 mt-2 text-center">
+                                                    Note: Rooms without selected dates will not be included in the booking
+                                                </p>
+                                            )}
                                     </div>
                                 </div>
                             </div>

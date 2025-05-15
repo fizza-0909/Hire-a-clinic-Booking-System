@@ -89,12 +89,10 @@ const MyBookingsPage = () => {
         switch (status) {
             case 'succeeded':
                 return 'Paid';
-            case 'pending':
-                return 'Payment Pending';
-            case 'failed':
-                return 'Payment Failed';
+            case 'rejected':
+                return 'Payment Rejected';
             default:
-                return 'Payment Information Not Available';
+                return 'Payment Rejected';
         }
     };
 
@@ -102,12 +100,9 @@ const MyBookingsPage = () => {
         switch (status) {
             case 'succeeded':
                 return 'bg-green-100 text-green-800';
-            case 'pending':
-                return 'bg-yellow-100 text-yellow-800';
-            case 'failed':
-                return 'bg-red-100 text-red-800';
+            case 'rejected':
             default:
-                return 'bg-gray-100 text-gray-800';
+                return 'bg-red-100 text-red-800';
         }
     };
 
@@ -206,32 +201,32 @@ const MyBookingsPage = () => {
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
             <Header />
 
-            <main className="container mx-auto px-4 py-8">
-                <div className="max-w-4xl mx-auto">
-                    <div className="flex justify-between items-center mb-8">
-                        <h1 className="text-3xl font-bold text-gray-800">My Bookings</h1>
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => router.push('/')}
-                                className="flex items-center px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
-                            >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                                </svg>
-                                Back to Home
-                            </button>
-                            <button
-                                onClick={() => router.push('/booking')}
-                                className="flex items-center px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                            >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                                </svg>
-                                Make New Booking
-                            </button>
-                        </div>
+            <div className="container mx-auto px-4 py-8">
+                <div className="flex justify-between items-center mb-8 max-w-7xl mx-auto">
+                    <h1 className="text-3xl font-bold text-gray-800">My Bookings</h1>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => router.push('/')}
+                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                        >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                            </svg>
+                            Back to Home
+                        </button>
+                        <button
+                            onClick={() => router.push('/booking')}
+                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                        >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Make New Booking
+                        </button>
                     </div>
+                </div>
 
+                <div className="max-w-7xl mx-auto">
                     {bookings.length === 0 ? (
                         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
                             <h2 className="text-xl font-semibold text-gray-700 mb-4">No Bookings Found</h2>
@@ -244,72 +239,89 @@ const MyBookingsPage = () => {
                             </button>
                         </div>
                     ) : (
-                        <div className="space-y-6">
+                        <div className="grid grid-cols-1 gap-6">
                             {bookings.map((booking) => (
-                                <div key={booking._id} className="bg-white rounded-2xl shadow-xl p-6">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <h2 className="text-xl font-semibold text-gray-800">Room {booking.roomId}</h2>
-                                            <p className="text-gray-600">{getTimeSlotText(booking.timeSlot)}</p>
-                                            <p className="text-sm text-gray-500 mt-1">Booked on: {booking.createdAt}</p>
-                                            {booking.paymentDetails?.confirmedAt && (
-                                                <p className="text-sm text-green-600 mt-1">
-                                                    Payment confirmed on: {new Date(booking.paymentDetails.confirmedAt).toLocaleString()}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col items-end">
-                                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusColor(booking.paymentDetails?.status)}`}>
-                                                {getPaymentStatusText(booking.paymentDetails?.status)}
+                                <div key={booking._id} className="bg-white rounded-2xl shadow-xl overflow-hidden">
+                                    <div className="flex flex-col md:flex-row">
+                                        {/* Left Section - Room Info */}
+                                        <div className="w-full md:w-1/4 bg-gray-50 p-6 flex flex-col justify-between">
+                                            <div>
+                                                <h2 className="text-2xl font-bold text-gray-800">Room {booking.roomId}</h2>
+                                                <p className="text-gray-600 mt-2">{getTimeSlotText(booking.timeSlot)}</p>
+                                                <div className={`mt-4 inline-flex px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusColor(booking.paymentDetails?.status)}`}>
+                                                    {getPaymentStatusText(booking.paymentDetails?.status)}
+                                                </div>
+                                            </div>
+                                            <div className="mt-4">
+                                                <p className="text-sm text-gray-500">Booked on:</p>
+                                                <p className="text-sm font-medium">{new Date(booking.createdAt).toLocaleDateString()}</p>
+                                                {booking.paymentDetails?.confirmedAt && (
+                                                    <div className="mt-2">
+                                                        <p className="text-sm text-green-600">Payment confirmed:</p>
+                                                        <p className="text-sm font-medium text-green-700">
+                                                            {new Date(booking.paymentDetails.confirmedAt).toLocaleDateString()}
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {/* Payment Error Details */}
-                                    {booking.paymentDetails?.error && (
-                                        <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
-                                            <h3 className="text-sm font-medium text-red-800 mb-2">Payment Failed Details</h3>
-                                            <p className="text-sm text-red-700">{booking.paymentDetails.error.message}</p>
-                                            {booking.paymentDetails.error.code && (
-                                                <p className="text-xs text-red-600 mt-1">Error Code: {booking.paymentDetails.error.code}</p>
-                                            )}
-                                            {booking.paymentDetails.error.decline_code && (
-                                                <p className="text-xs text-red-600 mt-1">Decline Code: {booking.paymentDetails.error.decline_code}</p>
-                                            )}
-                                            <button
-                                                onClick={() => router.push('/booking/payment')}
-                                                className="mt-3 text-sm font-medium text-red-700 hover:text-red-800"
-                                            >
-                                                Try Payment Again →
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-4">
-                                        <div>
-                                            <h3 className="text-sm font-medium text-gray-600 mb-2">Dates:</h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {/* Middle Section - Dates */}
+                                        <div className="w-full md:w-2/4 p-6 border-t md:border-t-0 md:border-l md:border-r border-gray-200">
+                                            <h3 className="text-sm font-medium text-gray-600 mb-4">Selected Dates:</h3>
+                                            <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto pr-2">
                                                 {booking.dates.map((date) => (
                                                     <div key={date} className="bg-gray-50 px-3 py-2 rounded-lg text-sm">
                                                         {formatDate(date)}
                                                     </div>
                                                 ))}
                                             </div>
+
+                                            {/* Payment Error Section */}
+                                            {booking.paymentDetails?.status === 'rejected' && (
+                                                <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                                                    <h3 className="text-sm font-medium text-red-800 mb-2">Payment Failed</h3>
+                                                    <p className="text-sm text-red-700">{booking.paymentDetails.error?.message || 'Payment was rejected'}</p>
+                                                    {booking.paymentDetails.error?.code && (
+                                                        <p className="text-xs text-red-600 mt-1">Error Code: {booking.paymentDetails.error.code}</p>
+                                                    )}
+                                                    {booking.paymentDetails.error?.decline_code && (
+                                                        <p className="text-xs text-red-600 mt-1">Decline Code: {booking.paymentDetails.error.decline_code}</p>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
-                                        <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                                            <div>
-                                                <p className="text-sm text-gray-600">Total Amount:</p>
-                                                <p className="text-lg font-semibold text-blue-600">
-                                                    ${calculateTotalAmount(booking).toFixed(2)}
-                                                </p>
+                                        {/* Right Section - Price and Actions */}
+                                        <div className="w-full md:w-1/4 p-6 bg-gray-50">
+                                            <div className="h-full flex flex-col justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-600">Total Amount:</p>
+                                                    <p className="text-2xl font-bold text-blue-600 mb-4">
+                                                        ${calculateTotalAmount(booking).toFixed(2)}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">
+                                                        Includes tax and applicable security deposit
+                                                    </p>
+                                                </div>
+                                                <div className="mt-6">
+                                                    {booking.paymentDetails?.status === 'rejected' ? (
+                                                        <button
+                                                            onClick={() => router.push('/booking')}
+                                                            className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200"
+                                                        >
+                                                            Try New Booking
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleViewDetails(booking)}
+                                                            className="w-full bg-blue-100 text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-200 transition-colors duration-200"
+                                                        >
+                                                            View Details
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <button
-                                                onClick={() => handleViewDetails(booking)}
-                                                className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-200 transition-colors duration-200"
-                                            >
-                                                View Details
-                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -317,7 +329,7 @@ const MyBookingsPage = () => {
                         </div>
                     )}
                 </div>
-            </main>
+            </div>
         </div>
     );
 };

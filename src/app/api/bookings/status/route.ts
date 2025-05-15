@@ -10,7 +10,7 @@ interface Booking {
     status: string;
     createdAt: Date;
     paymentDetails: {
-        status: string;
+        status: 'succeeded' | 'rejected';
     };
 }
 
@@ -42,16 +42,13 @@ export async function POST(req: Request) {
         const endDateStr = endDate.toISOString().split('T')[0];
 
         // Find all bookings for the month and specific room if provided
+        // Only consider bookings with successful payments
         const query = {
             date: {
                 $gte: startDateStr,
                 $lte: endDateStr
             },
-            $or: [
-                { status: 'confirmed' },
-                { 'paymentDetails.status': 'succeeded' },
-                { status: 'pending', createdAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) } } // Only include pending bookings less than 30 minutes old
-            ],
+            'paymentDetails.status': 'succeeded', // Only consider paid bookings
             ...(roomId && { roomId: roomId.toString() })
         };
 
@@ -61,7 +58,7 @@ export async function POST(req: Request) {
             .find(query)
             .toArray() as unknown as (WithId<Document> & Booking)[];
 
-        console.log(`Found ${bookings.length} bookings`);
+        console.log(`Found ${bookings.length} paid bookings`);
 
         // Create a map of dates and their booking status per room
         const bookingMap = new Map<string, BookingStatus>();
@@ -82,12 +79,8 @@ export async function POST(req: Request) {
 
             const status = bookingMap.get(key)!;
 
-            // Check both booking status and payment status
-            const isConfirmed = booking.status === 'confirmed' || booking.paymentDetails?.status === 'succeeded';
-            const isPending = booking.status === 'pending' && new Date(booking.createdAt) > new Date(Date.now() - 30 * 60 * 1000);
-
-            // Mark slots as taken for both confirmed and recent pending bookings
-            if (booking.timeSlot && (isConfirmed || isPending)) {
+            // Only process paid bookings
+            if (booking.timeSlot && booking.paymentDetails?.status === 'succeeded') {
                 // Don't add duplicate time slots
                 if (!status.timeSlots.includes(booking.timeSlot)) {
                     status.timeSlots.push(booking.timeSlot);
