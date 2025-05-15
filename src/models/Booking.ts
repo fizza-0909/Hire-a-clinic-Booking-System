@@ -8,16 +8,32 @@ const bookingSchema = new Schema({
         required: true
     },
     rooms: [{
-        id: Number,
-        name: String,
+        roomId: {
+            type: String,
+            required: true
+        },
+        name: {
+            type: String,
+            required: true
+        },
         timeSlot: {
             type: String,
             enum: ['full', 'morning', 'evening'],
             required: true
         },
         dates: [{
-            type: String,
-            required: true
+            date: {
+                type: String,
+                required: true
+            },
+            startTime: {
+                type: String,
+                required: true
+            },
+            endTime: {
+                type: String,
+                required: true
+            }
         }]
     }],
     bookingType: {
@@ -31,15 +47,28 @@ const bookingSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'confirmed', 'cancelled'],
+        enum: ['pending', 'confirmed', 'cancelled', 'failed'],
         default: 'pending'
     },
     paymentStatus: {
         type: String,
-        enum: ['pending', 'completed', 'failed'],
+        enum: ['pending', 'succeeded', 'failed'],
         default: 'pending'
     },
-    paymentIntentId: String,
+    paymentIntentId: {
+        type: String,
+        sparse: true
+    },
+    stripeCustomerId: {
+        type: String,
+        sparse: true
+    },
+    paymentDetails: {
+        status: String,
+        confirmedAt: Date,
+        failedAt: Date,
+        failureMessage: String
+    },
     createdAt: {
         type: Date,
         default: Date.now
@@ -54,25 +83,35 @@ const bookingSchema = new Schema({
 
 // Add indexes for common queries
 bookingSchema.index({ userId: 1, status: 1 });
-bookingSchema.index({ roomId: 1, dates: 1, timeSlot: 1 });
-bookingSchema.index({ 'paymentDetails.stripePaymentIntentId': 1 });
+bookingSchema.index({ paymentIntentId: 1 });
 
 // Validate dates don't overlap for same room and time slot
 bookingSchema.pre('save', async function (next) {
-    if (this.isModified('dates') || this.isModified('timeSlot') || this.isModified('roomId')) {
-        const existingBooking = await mongoose.model('Booking').findOne({
-            _id: { $ne: this._id },
-            roomId: this.roomId,
-            dates: { $in: this.dates },
-            timeSlot: this.timeSlot,
-            status: { $in: ['pending', 'confirmed'] }
-        });
+    try {
+        // Check each room in the booking
+        for (const room of this.rooms) {
+            const existingBooking = await this.constructor.findOne({
+                _id: { $ne: this._id },
+                'rooms': {
+                    $elemMatch: {
+                        'roomId': room.roomId,
+                        'timeSlot': room.timeSlot,
+                        'dates.date': {
+                            $in: room.dates.map(d => d.date)
+                        }
+                    }
+                },
+                'status': { $in: ['pending', 'confirmed'] }
+            });
 
-        if (existingBooking) {
-            next(new Error('Room is already booked for these dates and time slot'));
+            if (existingBooking) {
+                throw new Error(`Room ${room.name} is already booked for some of the selected dates and time slot`);
+            }
         }
+        next();
+    } catch (error) {
+        next(error);
     }
-    next();
 });
 
 export const Booking = models.Booking || model('Booking', bookingSchema);

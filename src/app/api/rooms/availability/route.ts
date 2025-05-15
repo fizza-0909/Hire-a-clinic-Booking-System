@@ -34,22 +34,31 @@ export async function GET(request: Request) {
 
         // Get all bookings for this room in the specified month
         const bookings = await Booking.find({
-            roomId,
-            dates: {
+            'rooms': {
                 $elemMatch: {
-                    $gte: startDate,
-                    $lte: endDate
+                    'id': Number(roomId),
+                    'dates': {
+                        $elemMatch: {
+                            $gte: startDate,
+                            $lte: endDate
+                        }
+                    }
                 }
             },
             status: { $in: ['pending', 'confirmed'] }
-        }).select('dates timeSlot status').lean();
+        }).select('rooms status').lean();
 
         // Format the response
-        const bookedDates = bookings.map(booking => ({
-            dates: booking.dates,
-            timeSlot: booking.timeSlot,
-            status: booking.status
-        }));
+        const bookedDates = bookings.flatMap(booking => {
+            const roomBooking = booking.rooms.find(r => r.id === Number(roomId));
+            if (!roomBooking) return [];
+
+            return roomBooking.dates.map(date => ({
+                date,
+                timeSlot: roomBooking.timeSlot,
+                status: booking.status
+            }));
+        });
 
         return NextResponse.json({
             roomId,

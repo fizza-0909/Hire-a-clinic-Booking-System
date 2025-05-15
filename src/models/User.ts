@@ -33,6 +33,10 @@ const userSchema = new Schema({
         type: Boolean,
         default: false
     },
+    stripeCustomerId: {
+        type: String,
+        sparse: true  // Allows null values and creates a sparse index
+    },
     preferences: {
         emailNotifications: {
             type: Boolean,
@@ -59,6 +63,7 @@ userSchema.pre('save', async function (next) {
 
     try {
         this.password = await hash(this.password, 12);
+        this.updatedAt = new Date();
         next();
     } catch (error) {
         next(error as Error);

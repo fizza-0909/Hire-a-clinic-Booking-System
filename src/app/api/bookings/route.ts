@@ -1,67 +1,77 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { connectToDatabase } from '@/lib/mongodb';
+import dbConnect from '@/lib/mongoose';
+import { Booking } from '@/models/Booking';
 
 export async function GET(req: Request) {
     try {
-        // Check authentication
         const session = await getServerSession(authOptions);
         if (!session?.user?.id) {
             return NextResponse.json(
-                { error: 'Please log in to view your bookings' },
+                { error: 'Unauthorized' },
                 { status: 401 }
             );
         }
 
         console.log('Fetching bookings for user:', session.user.id);
+        await dbConnect();
 
-        // Connect to database
-        const { db } = await connectToDatabase();
-
-        // Get user's bookings with payment status
-        const bookings = await db.collection('bookings')
-            .find({
-                userId: session.user.id
-            })
-            .sort({ createdAt: -1 })
-            .toArray();
+        // Find all bookings for the user
+        const bookings = await Booking.find({
+            userId: session.user.id
+        }).sort({ createdAt: -1 }).lean();
 
         console.log(`Found ${bookings.length} bookings for user`);
 
-        // Group bookings by roomId and payment intent
+        // Group bookings by room and payment intent
         const groupedBookings = bookings.reduce((acc: any[], booking) => {
-            const existingBooking = acc.find(b =>
-                b.roomId === booking.roomId &&
-                b.timeSlot === booking.timeSlot &&
-                b.paymentDetails?.paymentIntentId === booking.paymentDetails?.paymentIntentId
-            );
+            // For each room in the booking
+            booking.rooms.forEach(room => {
+                // Format dates to be human-readable
+                const formattedDates = room.dates.map(date =>
+                    new Date(date).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    })
+                );
 
-            // Format the creation date
-            const createdDate = booking.createdAt ? new Date(booking.createdAt).toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            }) : 'Date not available';
+                const existingBooking = acc.find(b =>
+                    b.roomId === room.id &&
+                    b.timeSlot === room.timeSlot &&
+                    b.paymentIntentId === booking.paymentIntentId
+                );
 
-            if (existingBooking) {
-                existingBooking.dates = [...(existingBooking.dates || []), booking.date].sort();
-            } else {
-                // Determine the real payment status
-                const paymentStatus = booking.paymentDetails?.status;
-                const bookingStatus = paymentStatus === 'succeeded' ? 'confirmed' : 'pending';
+                // Format the creation date
+                const createdDate = booking.createdAt ? new Date(booking.createdAt).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) : 'Date not available';
 
-                acc.push({
-                    ...booking,
-                    dates: [booking.date],
-                    status: bookingStatus,
-                    createdAt: createdDate,
-                    paymentStatus: paymentStatus
-                });
-            }
+                if (existingBooking) {
+                    existingBooking.dates = [...new Set([...existingBooking.dates, ...formattedDates])].sort();
+                } else {
+                    acc.push({
+                        _id: booking._id,
+                        roomId: room.id,
+                        name: room.name || `Room ${room.id}`,
+                        timeSlot: room.timeSlot,
+                        dates: formattedDates,
+                        status: booking.status,
+                        paymentStatus: booking.paymentStatus,
+                        totalAmount: booking.totalAmount,
+                        paymentIntentId: booking.paymentIntentId,
+                        createdAt: createdDate,
+                        paymentError: booking.paymentError
+                    });
+                }
+            });
             return acc;
         }, []);
 

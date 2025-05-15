@@ -15,52 +15,35 @@ const options = {
     connectTimeoutMS: 10000,
 };
 
+declare global {
+    var _mongoClientPromise: Promise<MongoClient>;
+}
+
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
-const MAX_RETRIES = 5;
-const RETRY_DELAY = 1000; // 1 second
+if (process.env.NODE_ENV === 'development') {
+    // In development mode, use a global variable so that the value
+    // is preserved across module reloads caused by HMR (Hot Module Replacement).
+    if (!global._mongoClientPromise) {
+        client = new MongoClient(uri, options);
+        global._mongoClientPromise = client.connect();
+    }
+    clientPromise = global._mongoClientPromise;
+} else {
+    // In production mode, it's best to not use a global variable.
+    client = new MongoClient(uri, options);
+    clientPromise = client.connect();
+}
+
+// Export a module-scoped MongoClient promise. By doing this in a
+// separate module, the client can be shared across functions.
+export default clientPromise;
 
 export async function connectToDatabase() {
     try {
-        if (!client) {
-            console.log('Creating new MongoDB client...');
-            client = new MongoClient(uri, options);
-        }
-
-        // If we already have a connection promise, return it
-        if (clientPromise) {
-            const connectedClient = await clientPromise;
-            // Test the connection
-            await connectedClient.db().command({ ping: 1 });
-            return { db: connectedClient.db(), client: connectedClient };
-        }
-
-        let retries = MAX_RETRIES;
-        let lastError;
-
-        while (retries > 0) {
-            try {
-                console.log(`Connecting to database... Retries left: ${retries}`);
-                clientPromise = client.connect();
-                const connectedClient = await clientPromise;
-
-                // Test the connection
-                await connectedClient.db().command({ ping: 1 });
-                console.log('Successfully connected to database');
-
-                return { db: connectedClient.db(), client: connectedClient };
-            } catch (error) {
-                lastError = error;
-                console.error(`Database connection attempt failed. Retries left: ${retries}`, error);
-                retries--;
-                if (retries > 0) {
-                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                }
-            }
-        }
-
-        throw lastError || new Error('Failed to connect to database after multiple retries');
+        const connectedClient = await clientPromise;
+        return { db: connectedClient.db(), client: connectedClient };
     } catch (error) {
         console.error('Error connecting to database:', error);
         throw error;

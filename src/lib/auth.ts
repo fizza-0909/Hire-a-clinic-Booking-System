@@ -61,26 +61,59 @@ export const authOptions: NextAuthOptions = {
             }
 
             // Handle updates to the session
-            if (trigger === "update" && session) {
+            if (trigger === "update") {
                 // Get fresh user data
                 await dbConnect();
-                const freshUser = await User.findById(token.id);
+                const freshUser = await User.findById(token.id).lean();
                 if (freshUser) {
-                    token.isVerified = freshUser.isVerified;
+                    console.log('Updating JWT with fresh user data:', {
+                        userId: freshUser._id,
+                        isVerified: freshUser.isVerified
+                    });
+
+                    return {
+                        ...token,
+                        isVerified: freshUser.isVerified,
+                        name: `${freshUser.firstName} ${freshUser.lastName}`,
+                        firstName: freshUser.firstName,
+                        lastName: freshUser.lastName,
+                        email: freshUser.email
+                    };
                 }
-                return { ...token, ...session.user };
             }
 
             return token;
         },
         async session({ session, token }) {
             if (token) {
-                session.user.id = token.id;
-                session.user.email = token.email;
-                session.user.name = token.name;
-                session.user.firstName = token.firstName;
-                session.user.lastName = token.lastName;
-                session.user.isVerified = token.isVerified;
+                // Get fresh user data for every session
+                await dbConnect();
+                const freshUser = await User.findById(token.id).lean();
+
+                if (freshUser) {
+                    console.log('Updating session with fresh user data:', {
+                        userId: freshUser._id,
+                        isVerified: freshUser.isVerified
+                    });
+
+                    session.user = {
+                        id: freshUser._id.toString(),
+                        email: freshUser.email,
+                        name: `${freshUser.firstName} ${freshUser.lastName}`,
+                        firstName: freshUser.firstName,
+                        lastName: freshUser.lastName,
+                        isVerified: freshUser.isVerified
+                    };
+                } else {
+                    session.user = {
+                        id: token.id,
+                        email: token.email,
+                        name: token.name,
+                        firstName: token.firstName,
+                        lastName: token.lastName,
+                        isVerified: token.isVerified
+                    };
+                }
             }
             return session;
         }

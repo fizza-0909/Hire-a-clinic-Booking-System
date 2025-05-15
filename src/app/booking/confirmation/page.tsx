@@ -51,10 +51,10 @@ const ConfirmationPage = () => {
     const [isDownloading, setIsDownloading] = useState(false);
     const [showAnimation, setShowAnimation] = useState(true);
 
-    // Define user information
+    // Define user information with optional chaining for phoneNumber
     const userName = session?.user ? `${session.user.firstName} ${session.user.lastName}` : 'N/A';
     const userEmail = session?.user?.email || 'N/A';
-    const userPhone = session?.user?.phoneNumber || 'N/A';
+    const userPhone = (session?.user as any)?.phoneNumber || 'N/A';  // Type assertion since phoneNumber is optional
 
     useEffect(() => {
         const verifyPaymentAndBooking = async () => {
@@ -70,6 +70,8 @@ const ConfirmationPage = () => {
                 const { clientSecret } = JSON.parse(paymentIntentData);
                 const parsedBookingData = JSON.parse(bookingData);
 
+                setIsLoading(true);
+
                 // Verify payment status
                 const response = await fetch('/api/payment/verify', {
                     method: 'POST',
@@ -82,11 +84,21 @@ const ConfirmationPage = () => {
                 const paymentStatus = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(paymentStatus.error || 'Failed to verify payment');
+                    setPaymentError({
+                        message: paymentStatus.error || 'Failed to verify payment'
+                    });
+                    setBookingDetails(null);
+                    return;
                 }
 
-                if (paymentStatus.status === 'succeeded') {
+                if (paymentStatus.success) {
+                    // Payment succeeded
                     setBookingDetails(parsedBookingData);
+                    setPaymentError(null);
+
+                    // Clear payment data from session storage
+                    sessionStorage.removeItem('paymentIntent');
+                    sessionStorage.removeItem('bookingData');
                 } else {
                     // Payment failed or is incomplete
                     setPaymentError({
@@ -94,6 +106,7 @@ const ConfirmationPage = () => {
                         code: paymentStatus.code,
                         decline_code: paymentStatus.decline_code
                     });
+                    setBookingDetails(null);
 
                     // Update booking status to failed
                     await fetch('/api/bookings/update-status', {
@@ -117,8 +130,10 @@ const ConfirmationPage = () => {
                 setPaymentError({
                     message: error instanceof Error ? error.message : 'An unknown error occurred'
                 });
+                setBookingDetails(null);
             } finally {
                 setIsLoading(false);
+                setShowAnimation(false);
             }
         };
 
@@ -327,39 +342,28 @@ const ConfirmationPage = () => {
         return (
             <div className="min-h-screen bg-gray-50">
                 <Header />
-                <div className="max-w-4xl mx-auto p-6">
-                    <div className="bg-white rounded-2xl shadow-xl p-8">
-                        <div className="text-center mb-8">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
-                                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </div>
+                <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+                    <div className="bg-white shadow sm:rounded-lg p-6 max-w-3xl mx-auto">
+                        <div className="text-center">
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Failed</h1>
-                            <p className="text-lg text-gray-600 mb-6">{paymentError.message}</p>
-                            {paymentError.code && (
-                                <p className="text-sm text-gray-500 mb-2">Error Code: {paymentError.code}</p>
-                            )}
-                            {paymentError.decline_code && (
-                                <p className="text-sm text-gray-500 mb-4">Decline Code: {paymentError.decline_code}</p>
-                            )}
-                        </div>
-                        <div className="flex flex-col space-y-4">
-                            <button
-                                onClick={() => router.push('/booking/payment')}
-                                className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                                Try Payment Again
-                            </button>
-                            <button
-                                onClick={() => router.push('/my-bookings')}
-                                className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                            >
-                                View Booking History
-                            </button>
+                            <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-4">
+                                <h3 className="text-sm font-medium text-red-800 mb-2">Error Details</h3>
+                                <p className="text-sm text-red-700">{paymentError.message}</p>
+                                {paymentError.code && (
+                                    <p className="text-sm text-red-700 mt-1">Error Code: {paymentError.code}</p>
+                                )}
+                            </div>
+                            <div className="mt-6">
+                                <button
+                                    onClick={() => router.push('/booking')}
+                                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                >
+                                    Try Booking Again
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </main>
             </div>
         );
     }
@@ -384,52 +388,19 @@ const ConfirmationPage = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             <Header />
-            {/* Success Animation */}
-            {showAnimation && (
-                <div className="fixed top-0 left-0 right-0 flex justify-center items-center bg-green-50 py-4 shadow-md transition-all duration-500 ease-in-out z-50">
-                    <div className="flex items-center space-x-4">
-                        <div className="flex-shrink-0">
-                            <div className="h-12 w-12 rounded-full border-4 border-green-500 flex items-center justify-center animate-[bounce_1s_ease-in-out_infinite]">
-                                <svg className="h-6 w-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                                </svg>
-                            </div>
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-green-800">Booking Confirmed!</h2>
-                            <p className="text-green-600">Your payment was successful and your booking is confirmed.</p>
-                        </div>
-                        <button
-                            onClick={() => setShowAnimation(false)}
-                            className="p-1 hover:bg-green-100 rounded-full"
-                        >
-                            <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+                <div className="bg-white shadow sm:rounded-lg p-6 max-w-3xl mx-auto">
+                    <div className="text-center mb-8">
+                        <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                            <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                        </button>
+                        </div>
+                        <h1 className="text-3xl font-bold text-gray-900">Booking Confirmed!</h1>
+                        <p className="mt-2 text-sm text-gray-600">
+                            Your payment has been processed successfully and your booking is confirmed.
+                        </p>
                     </div>
-                </div>
-            )}
-            <div className="max-w-4xl mx-auto p-6 space-y-8">
-                {/* Back Button */}
-                <button
-                    onClick={() => router.push('/booking')}
-                    className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                    </svg>
-                    Back to Booking
-                </button>
-
-                <h1 className="text-3xl font-bold text-center text-blue-600">HIRE A CLINIC</h1>
-                <h2 className="text-xl text-center text-gray-700 mb-8">Booking Confirmation</h2>
-
-                {isLoading ? (
-                    <div className="flex justify-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    </div>
-                ) : bookingDetails ? (
                     <div className="space-y-8">
                         {/* Customer Details Section */}
                         <section className="bg-white rounded-lg shadow p-6">
@@ -543,12 +514,8 @@ const ConfirmationPage = () => {
                             </button>
                         </div>
                     </div>
-                ) : (
-                    <div className="text-center text-gray-600">
-                        No booking details found
-                    </div>
-                )}
-            </div>
+                </div>
+            </main>
         </div>
     );
 };

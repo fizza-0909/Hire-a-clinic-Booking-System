@@ -11,23 +11,41 @@ export async function POST() {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        console.log('Starting user verification process for:', session.user.id);
         await dbConnect();
 
-        // Update user's verification status
-        const user = await User.findById(session.user.id);
-        if (!user) {
+        // Find and update user's verification status
+        const updatedUser = await User.findByIdAndUpdate(
+            session.user.id,
+            {
+                $set: {
+                    isVerified: true,
+                    updatedAt: new Date()
+                }
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedUser) {
+            console.error('User not found:', session.user.id);
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        user.isVerified = true;
-        await user.save();
+        console.log('User verified successfully:', {
+            userId: updatedUser._id,
+            isVerified: updatedUser.isVerified
+        });
 
         // Return the updated user data
         return NextResponse.json({
             message: 'User verified successfully',
             user: {
-                ...session.user,
-                isVerified: true
+                id: updatedUser._id.toString(),
+                email: updatedUser.email,
+                firstName: updatedUser.firstName,
+                lastName: updatedUser.lastName,
+                name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+                isVerified: updatedUser.isVerified
             }
         });
     } catch (error) {

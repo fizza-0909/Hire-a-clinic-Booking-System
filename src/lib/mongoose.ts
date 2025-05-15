@@ -7,8 +7,6 @@ declare global {
     } | undefined;
 }
 
-
-
 if (!process.env.MONGODB_URI) {
     throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
 }
@@ -30,7 +28,6 @@ if (!cached) {
 
 cached = global.mongoose!;
 
-
 async function dbConnect() {
     if (cached.conn) {
         return cached.conn;
@@ -51,8 +48,29 @@ async function dbConnect() {
         mongoose.set('strictQuery', true);
 
         cached.promise = mongoose.connect(process.env.MONGODB_URI!, opts)
-            .then((mongoose) => {
+            .then(async (mongoose) => {
                 console.log('Connected to MongoDB');
+
+                // Get the Booking model collection
+                const Booking = mongoose.connection.collection('bookings');
+
+                // Drop all existing indexes
+                try {
+                    await Booking.dropIndexes();
+                    console.log('Successfully dropped all indexes');
+                } catch (error) {
+                    console.error('Error dropping indexes:', error);
+                }
+
+                // Create new indexes
+                try {
+                    await Booking.createIndex({ userId: 1, status: 1 });
+                    await Booking.createIndex({ paymentIntentId: 1 });
+                    console.log('Successfully created new indexes');
+                } catch (error) {
+                    console.error('Error creating indexes:', error);
+                }
+
                 return mongoose;
             })
             .catch((error) => {

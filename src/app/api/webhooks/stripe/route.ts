@@ -50,10 +50,15 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 export async function POST(req: Request) {
     try {
         await logToFile('=== Webhook Request Received ===');
+        await logToFile(`Request URL: ${req.url}`);
+        await logToFile(`Request Method: ${req.method}`);
 
         const body = await req.text();
+        await logToFile(`Request Body: ${body.substring(0, 500)}...`);  // Log first 500 chars of body
+
         const headersList = headers();
         const signature = headersList.get('stripe-signature');
+        await logToFile(`Stripe Signature Present: ${!!signature}`);
 
         if (!signature) {
             await logToFile('No Stripe signature found in request');
@@ -68,10 +73,12 @@ export async function POST(req: Request) {
                 signature,
                 process.env.STRIPE_WEBHOOK_SECRET!
             );
-            await logToFile(`Event verified - Type: ${event.type}, ID: ${event.id}`);
+            await logToFile(`Event verified successfully - Type: ${event.type}, ID: ${event.id}`);
+            await logToFile(`Event Data: ${JSON.stringify(event.data.object, null, 2)}`);
         } catch (err) {
             const error = err as Error;
             await logToFile(`Webhook signature verification failed: ${error.message}`);
+            await logToFile(`STRIPE_WEBHOOK_SECRET length: ${process.env.STRIPE_WEBHOOK_SECRET?.length}`);
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
 

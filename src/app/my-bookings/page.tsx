@@ -48,6 +48,39 @@ const MyBookingsPage = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [hasSecurityDeposit, setHasSecurityDeposit] = useState(false);
 
+    const updateVerificationStatus = async () => {
+        try {
+            console.log('Updating user verification status...');
+            const verifyResponse = await fetch('/api/user/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (verifyResponse.ok) {
+                const verifyData = await verifyResponse.json();
+                console.log('Successfully verified user:', verifyData);
+
+                // Update the session with the verified status
+                await update();
+
+                // Force a page refresh to reflect the new status
+                router.refresh();
+
+                // Reload the page to ensure all components reflect the new status
+                window.location.reload();
+            } else {
+                const errorData = await verifyResponse.json();
+                console.error('Failed to verify user:', errorData);
+                toast.error('Failed to verify your account');
+            }
+        } catch (error) {
+            console.error('Error updating verification status:', error);
+            toast.error('Failed to update verification status');
+        }
+    };
+
     useEffect(() => {
         if (status === 'unauthenticated') {
             toast.error('Please login to view your bookings');
@@ -79,44 +112,16 @@ const MyBookingsPage = () => {
                 setBookings(data.bookings);
 
                 // Check if user has any successful payment
-                const hasDeposit = data.bookings.some((booking: Booking) =>
+                const hasSuccessfulPayment = data.bookings.some((booking: Booking) =>
                     booking.paymentDetails?.status === 'succeeded'
                 );
-                setHasSecurityDeposit(hasDeposit);
-                console.log('Security deposit status:', { hasDeposit });
+
+                setHasSecurityDeposit(hasSuccessfulPayment);
+                console.log('Security deposit status:', { hasSuccessfulPayment });
 
                 // If user has a successful payment and is not already verified, update their verification status
-                if (hasDeposit && !session?.user?.isVerified) {
-                    try {
-                        console.log('Updating user verification status...');
-                        const verifyResponse = await fetch('/api/user/verify', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            }
-                        });
-
-                        if (verifyResponse.ok) {
-                            const verifyData = await verifyResponse.json();
-                            console.log('Successfully verified user');
-                            // Update the session with the verified status
-                            await update({
-                                ...session,
-                                user: {
-                                    ...session?.user,
-                                    isVerified: true
-                                }
-                            });
-                            toast.success('Your account has been verified');
-                        } else {
-                            const errorData = await verifyResponse.json();
-                            console.error('Failed to verify user:', errorData);
-                            toast.error('Failed to verify your account');
-                        }
-                    } catch (error) {
-                        console.error('Error updating verification status:', error);
-                        toast.error('Failed to update verification status');
-                    }
+                if (hasSuccessfulPayment && !session?.user?.isVerified) {
+                    await updateVerificationStatus();
                 }
             } catch (error) {
                 console.error('Error fetching bookings:', error);

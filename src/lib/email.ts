@@ -4,11 +4,13 @@ import nodemailer from 'nodemailer';
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVER_HOST,
     port: Number(process.env.EMAIL_SERVER_PORT),
-    secure: Boolean(process.env.EMAIL_SERVER_SECURE), // true for 465, false for other ports
+    secure: process.env.EMAIL_SERVER_SECURE === 'true',
     auth: {
         user: process.env.EMAIL_SERVER_USER,
         pass: process.env.EMAIL_SERVER_PASSWORD,
     },
+    debug: true, // Enable debug output
+    logger: true // Enable logger output
 });
 
 interface EmailOptions {
@@ -19,6 +21,10 @@ interface EmailOptions {
 
 export async function sendEmail({ to, subject, html }: EmailOptions) {
     try {
+        // Verify connection configuration before sending
+        await transporter.verify();
+        console.log('SMTP connection verified successfully');
+
         const info = await transporter.sendMail({
             from: `"Hire a Clinic" <${process.env.EMAIL_FROM}>`,
             to,
@@ -26,10 +32,22 @@ export async function sendEmail({ to, subject, html }: EmailOptions) {
             html,
         });
 
-        console.log('Message sent: %s', info.messageId);
+        console.log('Message sent successfully:', {
+            messageId: info.messageId,
+            response: info.response,
+            accepted: info.accepted,
+            rejected: info.rejected
+        });
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        console.error('Error sending email:', error);
+        console.error('Error in sendEmail:', error);
+        if (error instanceof Error) {
+            console.error('Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+        }
         throw error;
     }
 }

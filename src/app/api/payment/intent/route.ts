@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { connectToDatabase } from '@/lib/mongodb';
-import { BookingData } from '@/types/booking';
+import dbConnect from '@/lib/mongoose';
+import { Booking } from '@/models/Booking';
+import User from '@/models/User';
 
 interface BookingRoom {
     id: number;
@@ -11,182 +12,174 @@ interface BookingRoom {
     dates: string[];
 }
 
+interface BookingData {
+    rooms: BookingRoom[];
+    bookingType: 'daily' | 'monthly';
+    totalAmount: number;
+}
+
 if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    typescript: true,
+    apiVersion: '2023-10-16'
 });
 
 export async function POST(req: Request) {
     try {
         // Check authentication
         const session = await getServerSession(authOptions);
-        console.log('Session check:', {
-            hasSession: !!session,
-            hasUserId: !!session?.user?.id,
-            isVerified: session?.user?.isVerified
-        });
-
         if (!session?.user?.id) {
-            console.error('Payment intent creation failed: No authenticated user');
             return NextResponse.json(
-                { error: 'Please log in to continue with payment' },
+                { error: 'Unauthorized' },
                 { status: 401 }
             );
         }
 
-        let requestData;
-        try {
-            requestData = await req.json();
-            console.log('Received payment intent request:', {
-                amount: requestData.amount,
-                hasBookingData: !!requestData.bookingData,
-                roomCount: requestData.bookingData?.rooms?.length,
-                totalAmount: requestData.bookingData?.totalAmount,
-                isVerified: session.user.isVerified
-            });
-        } catch (e) {
-            console.error('Payment intent creation failed: Invalid JSON data', e);
-            return NextResponse.json(
-                { error: 'Invalid request format' },
-                { status: 400 }
-            );
-        }
+        const { amount, bookingData } = await req.json();
+        console.log('Received payment intent request:', { amount, bookingData });
 
-        const { amount, bookingData } = requestData as { amount: number; bookingData: BookingData };
-
-        // Validate amount matches booking data
-        const expectedAmount = Math.round(bookingData.totalAmount * 100);
-        if (amount !== expectedAmount) {
-            console.error('Payment amount mismatch:', {
-                providedAmount: amount,
-                expectedAmount,
-                difference: amount - expectedAmount
-            });
-            return NextResponse.json(
-                { error: 'Payment amount does not match booking total' },
-                { status: 400 }
-            );
-        }
-
+        // Validate amount
         if (!amount || amount <= 0) {
-            console.error('Payment intent creation failed: Invalid amount', { amount });
+            console.error('Invalid amount:', amount);
             return NextResponse.json(
                 { error: 'Please provide a valid payment amount' },
                 { status: 400 }
             );
         }
 
+        // Validate booking data
         if (!bookingData || !bookingData.rooms || bookingData.rooms.length === 0) {
-            console.error('Payment intent creation failed: Invalid booking data', { bookingData });
+            console.error('Invalid booking data:', bookingData);
             return NextResponse.json(
                 { error: 'Please select at least one room to book' },
                 { status: 400 }
             );
         }
 
-        console.log('Connecting to database...');
-        const { db } = await connectToDatabase();
-        console.log('Database connection successful');
+        await dbConnect();
+        console.log('Connected to database');
 
-        // Create pending bookings first
-        console.log('Creating pending bookings...', {
-            userId: session.user.id,
-            roomCount: bookingData.rooms.length,
-            amount,
-            bookingType: bookingData.bookingType,
-            includesSecurityDeposit: !session.user.isVerified
+        // Get user details and check/create Stripe customer
+        const user = await User.findById(session.user.id);
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        let stripeCustomerId = user.stripeCustomerId;
+
+        // If user doesn't have a Stripe customer ID, create one
+        if (!stripeCustomerId) {
+            console.log('Creating new Stripe customer for user');
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: `${user.firstName} ${user.lastName}`,
+                metadata: {
+                    userId: user._id.toString()
+                }
+            });
+            stripeCustomerId = customer.id;
+
+            // Save Stripe customer ID to user
+            await User.findByIdAndUpdate(user._id, {
+                stripeCustomerId: customer.id
+            });
+            console.log('Saved Stripe customer ID to user');
+        }
+
+        // Check for existing incomplete payment intents
+        const existingPaymentIntents = await stripe.paymentIntents.list({
+            customer: stripeCustomerId,
+            limit: 5
         });
 
-        try {
-            const bookingPromises = bookingData.rooms.map(room => {
-                return db.collection('bookings').insertOne({
-                    userId: session.user.id,
-                    roomId: room.id.toString(),
-                    dates: room.dates,
-                    timeSlot: room.timeSlot,
-                    status: 'pending',
-                    totalAmount: amount / 100, // Convert back to dollars
-                    includesSecurityDeposit: !session.user.isVerified,
-                    paymentDetails: {
-                        status: 'pending',
-                        createdAt: new Date()
-                    },
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                });
-            });
+        const matchingIntent = existingPaymentIntents.data.find(intent =>
+            intent.amount === Math.round(amount) &&
+            intent.status === 'requires_payment_method' &&
+            Date.now() - intent.created * 1000 < 3600000 // Less than 1 hour old
+        );
 
-            const bookingResults = await Promise.all(bookingPromises);
-            const bookingIds = bookingResults.map(result => result.insertedId.toString());
-
-            console.log('Successfully created pending bookings', { bookingIds });
-
-            // Create a PaymentIntent with the order amount and currency
-            console.log('Creating Stripe payment intent...', {
-                amount: Math.round(amount),
-                userId: session.user.id,
-                includesSecurityDeposit: !session.user.isVerified
-            });
-
-            const paymentIntent = await stripe.paymentIntents.create({
+        let paymentIntent;
+        if (matchingIntent) {
+            console.log('Found existing payment intent:', matchingIntent.id);
+            paymentIntent = matchingIntent;
+        } else {
+            // Create a new PaymentIntent
+            paymentIntent = await stripe.paymentIntents.create({
                 amount: Math.round(amount),
                 currency: 'usd',
+                customer: stripeCustomerId,
                 automatic_payment_methods: {
                     enabled: true,
                 },
                 metadata: {
-                    userId: session.user.id,
-                    bookingIds: bookingIds.join(','),
-                    includesSecurityDeposit: (!session.user.isVerified).toString()
+                    userId: session.user.id
                 }
             });
-
-            console.log('Successfully created payment intent', {
-                paymentIntentId: paymentIntent.id,
-                amount: paymentIntent.amount,
-                includesSecurityDeposit: !session.user.isVerified
+            console.log('Created new payment intent:', {
+                id: paymentIntent.id,
+                amount: paymentIntent.amount
             });
-
-            // Update bookings with payment intent ID
-            await db.collection('bookings').updateMany(
-                {
-                    _id: { $in: bookingResults.map(result => result.insertedId) }
-                },
-                {
-                    $set: {
-                        'paymentDetails.paymentIntentId': paymentIntent.id
-                    }
-                }
-            );
-
-            console.log('Successfully updated bookings with payment intent ID');
-
-            return NextResponse.json({
-                clientSecret: paymentIntent.client_secret,
-                bookingIds,
-                includesSecurityDeposit: !session.user.isVerified
-            });
-        } catch (dbError) {
-            console.error('Database operation failed:', dbError);
-            return NextResponse.json(
-                { error: 'Failed to process booking. Please try again.' },
-                { status: 500 }
-            );
         }
+
+        // Check for existing pending booking
+        const existingBooking = await Booking.findOne({
+            userId: session.user.id,
+            totalAmount: amount / 100,
+            status: 'pending',
+            createdAt: { $gt: new Date(Date.now() - 3600000) } // Less than 1 hour old
+        });
+
+        let booking;
+        if (existingBooking) {
+            console.log('Found existing booking:', existingBooking._id);
+            booking = existingBooking;
+        } else {
+            // Create new booking
+            booking = await Booking.create({
+                userId: session.user.id,
+                rooms: bookingData.rooms.map(room => ({
+                    id: room.id,
+                    name: `Room ${room.id}`,
+                    timeSlot: room.timeSlot,
+                    dates: room.dates
+                })),
+                bookingType: bookingData.bookingType,
+                totalAmount: amount / 100,
+                status: 'pending',
+                paymentStatus: 'pending',
+                paymentIntentId: paymentIntent.id,
+                stripeCustomerId: stripeCustomerId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+            console.log('Created new booking:', {
+                id: booking._id,
+                rooms: booking.rooms.length,
+                amount: booking.totalAmount
+            });
+        }
+
+        // Ensure payment intent has the booking ID
+        if (!paymentIntent.metadata.bookingIds) {
+            await stripe.paymentIntents.update(paymentIntent.id, {
+                metadata: {
+                    ...paymentIntent.metadata,
+                    bookingIds: booking._id.toString()
+                }
+            });
+            console.log('Updated payment intent with booking ID');
+        }
+
+        return NextResponse.json({
+            clientSecret: paymentIntent.client_secret,
+            bookingIds: [booking._id.toString()]
+        });
     } catch (error) {
         console.error('Payment intent creation failed:', error);
-        // Check if it's a Stripe error
-        if (error instanceof Stripe.errors.StripeError) {
-            return NextResponse.json(
-                { error: `Payment service error: ${error.message}` },
-                { status: error.statusCode || 500 }
-            );
-        }
         return NextResponse.json(
-            { error: 'Failed to create payment intent. Please try again.' },
+            { error: error instanceof Error ? error.message : 'Failed to create payment intent' },
             { status: 500 }
         );
     }

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { loadStripe } from '@stripe/stripe-js';
+import type { Appearance } from '@stripe/stripe-js';
 import {
     Elements,
     PaymentElement,
@@ -11,15 +12,31 @@ import {
     useElements
 } from '@stripe/react-stripe-js';
 import Header from '@/components/Header';
+import { useSession } from 'next-auth/react';
 
 // Initialize Stripe
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+
+// Stripe appearance object
+const appearance: Appearance = {
+    theme: 'stripe',
+    variables: {
+        colorPrimary: '#635BFF',
+        colorBackground: '#ffffff',
+        colorText: '#30313d',
+        colorDanger: '#df1b41',
+        fontFamily: 'system-ui, sans-serif',
+        spacingUnit: '4px',
+        borderRadius: '8px',
+    },
+};
 
 interface PriceBreakdown {
     subtotal: number;
     tax: number;
     securityDeposit: number;
     total: number;
+    isVerified: boolean;
 }
 
 interface PaymentResponse {
@@ -27,70 +44,152 @@ interface PaymentResponse {
     bookingIds: string[];
 }
 
+interface RoomData {
+    id: number;
+    name: string;
+    timeSlot: 'full' | 'morning' | 'evening';
+    dates: string[];
+}
+
+interface BookingData {
+    rooms: RoomData[];
+    bookingType: 'daily' | 'monthly';
+    totalAmount: number;
+}
+
+interface TransformedBookingData {
+    rooms: {
+        roomId: string;
+        name: string;
+        timeSlot: 'full' | 'morning' | 'evening';
+        dates: {
+            date: string;
+            startTime: string;
+            endTime: string;
+        }[];
+    }[];
+    bookingType: 'daily' | 'monthly';
+    totalAmount: number;
+    status: 'pending';
+    paymentStatus: 'pending';
+}
+
 const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBreakdown; clientSecret: string }) => {
     const stripe = useStripe();
     const elements = useElements();
     const router = useRouter();
+    const { update: updateSession } = useSession();
     const [error, setError] = useState<string | null>(null);
     const [processing, setProcessing] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const updateVerificationStatus = async () => {
+        try {
+            console.log('Updating user verification status after payment...');
+            const verifyResponse = await fetch('/api/user/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (verifyResponse.ok) {
+                const verifyData = await verifyResponse.json();
+                console.log('Successfully verified user after payment:', verifyData);
+                await updateSession();
+            } else {
+                console.error('Failed to verify user after payment');
+            }
+        } catch (error) {
+            console.error('Error updating verification status after payment:', error);
+        }
+    };
 
     useEffect(() => {
         if (!stripe) {
-            console.log('Stripe not initialized yet');
             return;
         }
 
         const query = new URLSearchParams(window.location.search);
         const paymentIntentClientSecret = query.get('payment_intent_client_secret');
-        const paymentIntentId = query.get('payment_intent');
-
-        console.log('Payment intent params:', {
-            clientSecret: paymentIntentClientSecret ? 'present' : 'missing',
-            paymentIntentId: paymentIntentId ? 'present' : 'missing'
-        });
 
         if (paymentIntentClientSecret) {
-            stripe.retrievePaymentIntent(paymentIntentClientSecret).then(({ paymentIntent }) => {
+            stripe.retrievePaymentIntent(paymentIntentClientSecret).then(async ({ paymentIntent }) => {
                 switch (paymentIntent?.status) {
                     case 'succeeded':
                         try {
-                            // Move booking data to confirmation data
                             const bookingData = sessionStorage.getItem('bookingData');
-                            console.log('Retrieved booking data:', bookingData);
-
                             if (!bookingData) {
-                                console.error('No booking data found in sessionStorage');
                                 throw new Error('No booking data found');
                             }
 
-                            // Parse and validate the booking data
                             const parsedBookingData = JSON.parse(bookingData);
                             if (!parsedBookingData.rooms || !parsedBookingData.totalAmount) {
-                                console.error('Invalid booking data structure:', parsedBookingData);
                                 throw new Error('Invalid booking data structure');
                             }
 
-                            // Store confirmation data first
-                            sessionStorage.setItem('confirmationData', bookingData);
-                            console.log('Stored confirmation data successfully');
+                            // First confirm the payment status
+                            const confirmResponse = await fetch('/api/bookings/confirm', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    ...parsedBookingData,
+                                    paymentIntentId: paymentIntent.id,
+                                    paymentStatus: 'succeeded',
+                                    paymentDetails: {
+                                        status: 'succeeded',
+                                        confirmedAt: new Date(),
+                                        amount: parsedBookingData.totalAmount,
+                                        currency: paymentIntent.currency,
+                                        paymentMethodType: paymentIntent.payment_method_types?.[0] || 'card'
+                                    }
+                                })
+                            });
 
-                            // Show success message
-                            toast.success('Payment successful! Redirecting to confirmation...');
+                            if (!confirmResponse.ok) {
+                                const errorData = await confirmResponse.json();
+                                throw new Error(errorData.error || 'Failed to confirm booking with server');
+                            }
 
-                            // Clean up booking data
+                            // Then update verification status
+                            const verifyResponse = await fetch('/api/user/verify', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                            });
+
+                            if (!verifyResponse.ok) {
+                                console.error('Warning: Failed to verify user after payment');
+                            } else {
+                                await updateSession();
+                            }
+
+                            // Clear session storage
                             sessionStorage.removeItem('bookingData');
                             sessionStorage.removeItem('paymentIntent');
-                            console.log('Cleaned up session storage');
+                            // Store confirmation data
+                            sessionStorage.setItem('confirmationData', JSON.stringify({
+                                ...parsedBookingData,
+                                paymentStatus: 'succeeded',
+                                confirmedAt: new Date()
+                            }));
 
-                            // Navigate to confirmation page after a short delay
-                            setTimeout(() => {
-                                router.replace('/booking/confirmation');
-                            }, 1000);
+                            toast.success('Payment successful! Redirecting to confirmation...');
+                            router.replace('/booking/confirmation');
                         } catch (error) {
                             console.error('Error handling payment success:', error);
-                            toast.error('Error processing payment confirmation. Please check your bookings page.');
-
-                            // In case of error, redirect to bookings page
+                            // Try to fix the status if something went wrong
+                            try {
+                                await fetch('/api/bookings/fix-status', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ paymentIntentId: paymentIntent.id })
+                                });
+                            } catch (fixError) {
+                                console.error('Failed to fix booking status:', fixError);
+                            }
+                            toast.error('Error processing payment confirmation. Please check My Bookings for status.');
                             router.replace('/my-bookings');
                         }
                         break;
@@ -106,44 +205,34 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
                 }
             });
         }
-    }, [stripe, router]);
+    }, [stripe, router, updateSession]);
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (!stripe || !elements) {
-            console.error('Stripe or Elements not initialized');
+
+        if (!stripe || !elements || isSubmitting || processing) {
             return;
         }
 
+        setIsSubmitting(true);
         setProcessing(true);
         setError(null);
 
         try {
-            console.log('Starting payment submission...');
             const { error: submitError } = await elements.submit();
             if (submitError) {
-                console.error('Error submitting payment elements:', submitError);
                 throw new Error(submitError.message);
             }
 
-            console.log('Confirming payment...');
-            const { error } = await stripe.confirmPayment({
+            const { error: confirmError } = await stripe.confirmPayment({
                 elements,
                 confirmParams: {
                     return_url: `${window.location.origin}/booking/confirmation`,
-                    payment_method_data: {
-                        billing_details: {
-                            address: {
-                                country: 'US',
-                            },
-                        },
-                    },
                 },
             });
 
-            if (error) {
-                console.error('Error confirming payment:', error);
-                throw new Error(error.message);
+            if (confirmError) {
+                throw new Error(confirmError.message);
             }
         } catch (err) {
             console.error('Payment processing error:', err);
@@ -152,23 +241,22 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
             toast.error(errorMessage);
         } finally {
             setProcessing(false);
+            setIsSubmitting(false);
         }
     };
+
+    if (!stripe || !elements) {
+        return (
+            <div className="flex items-center justify-center p-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                <p className="ml-3 text-lg text-gray-600">Loading payment form...</p>
+            </div>
+        );
+    }
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
             <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-800">Pay securely with</h3>
-                    <div className="flex items-center">
-                        <img
-                            src="/images/stripe-icon.png"
-                            alt="Stripe"
-                            className="h-8 object-contain"
-                            style={{ maxWidth: '100px' }}
-                        />
-                    </div>
-                </div>
                 <PaymentElement />
             </div>
 
@@ -193,25 +281,13 @@ const PaymentForm = ({ priceBreakdown, clientSecret }: { priceBreakdown: PriceBr
                     </div>
                 ) : (
                     <>
-                        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M15 9H9V15H15V9Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <span>Pay ${priceBreakdown.total.toFixed(2)} with</span>
+                        <svg className="h-6 ml-2" viewBox="0 0 60 25" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                            <path d="M59.64 14.28h-8.06c.19 1.93 1.6 2.55 3.2 2.55 1.64 0 2.96-.37 4.05-.95v3.32a8.33 8.33 0 0 1-4.56 1.1c-4.01 0-6.83-2.5-6.83-7.48 0-4.19 2.39-7.52 6.3-7.52 3.92 0 5.96 3.28 5.96 7.5 0 .4-.04 1.26-.06 1.48zm-5.92-5.62c-1.03 0-2.17.73-2.17 2.58h4.25c0-1.85-1.07-2.58-2.08-2.58zM40.95 20.3c-1.44 0-2.32-.6-2.9-1.04l-.02 4.63-4.12.87V5.57h3.76l.1 1.03a4.7 4.7 0 0 1 3.28-1.29c3.28 0 5.52 3.33 5.52 7.52 0 4.7-2.25 7.47-5.62 7.47zM40 8.95c-.9 0-1.81.37-2.28.93l.02 7.43c.44.5 1.3.93 2.26.93 1.76 0 2.98-1.84 2.98-4.64 0-2.84-1.24-4.65-2.98-4.65zM28.24 5.57h4.13v14.44h-4.13V5.57zm0-4.7L32.37 0v3.36l-4.13.88V.88zm-4.32 9.35v9.79H19.8V5.57h3.7l.12 1.22c1-1.77 3.07-1.41 3.62-1.22v3.79c-.52-.17-2.29-.43-3.32.86zm-8.55 4.72c0 2.8 2.2 2.84 3.72 2.84v3.75c-2.15 0-4.31-.23-5.89-1.66-1.7-1.57-1.95-3.71-1.95-5.73V3.51l4.12-.88v4.01h3.72v3.35h-3.72v4.26zm-8.61-4.72v9.79H2.64V5.57h3.7l.12 1.22c1-1.77 3.07-1.41 3.62-1.22v3.79c-.52-.17-2.29-.43-3.32.86z" fillRule="evenodd"></path>
                         </svg>
-                        <span>Pay ${priceBreakdown.total.toFixed(2)} securely with Stripe</span>
                     </>
                 )}
             </button>
-
-            <div className="text-center text-sm text-gray-500 mt-4">
-                <p>Secure payment powered by Stripe</p>
-                <div className="flex items-center justify-center mt-2 space-x-2">
-                    <svg className="h-4" viewBox="0 0 24 24" fill="none">
-                        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" />
-                        <path d="M9 12L11 14L15 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    <span>Your payment information is secure</span>
-                </div>
-            </div>
         </form>
     );
 };
@@ -225,13 +301,76 @@ const PaymentPage = () => {
         subtotal: 0,
         tax: 0,
         securityDeposit: 0,
-        total: 0
+        total: 0,
+        isVerified: false
     });
+
+    const handleProceedToPayment = async () => {
+        try {
+            const bookingData = sessionStorage.getItem('bookingData');
+            if (!bookingData) {
+                throw new Error('No booking data found');
+            }
+
+            const parsedData = JSON.parse(bookingData) as BookingData;
+            if (!parsedData.rooms || !Array.isArray(parsedData.rooms)) {
+                throw new Error('Invalid booking data structure');
+            }
+
+            // Transform the booking data to match the schema
+            const transformedBookingData: TransformedBookingData = {
+                rooms: parsedData.rooms.map((room: RoomData) => ({
+                    roomId: room.id.toString(),
+                    name: room.name,
+                    timeSlot: room.timeSlot,
+                    dates: room.dates.map((date: string) => ({
+                        date: date,
+                        startTime: room.timeSlot === 'morning' ? '08:00' : room.timeSlot === 'evening' ? '14:00' : '08:00',
+                        endTime: room.timeSlot === 'morning' ? '13:00' : room.timeSlot === 'evening' ? '19:00' : '19:00'
+                    }))
+                })),
+                bookingType: parsedData.bookingType,
+                totalAmount: parsedData.totalAmount,
+                status: 'pending',
+                paymentStatus: 'pending'
+            };
+
+            // Create payment intent
+            const response = await fetch('/api/payment/intent', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    amount: Math.round(parsedData.totalAmount * 100), // Convert to cents for Stripe
+                    bookingData: transformedBookingData
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to create payment intent');
+            }
+
+            const { clientSecret } = await response.json();
+            if (!clientSecret) {
+                throw new Error('No client secret received');
+            }
+
+            // Store the transformed booking data
+            sessionStorage.setItem('bookingData', JSON.stringify(transformedBookingData));
+            sessionStorage.setItem('paymentIntent', JSON.stringify({ clientSecret }));
+
+            router.push('/booking/payment');
+        } catch (error) {
+            console.error('Error creating payment intent:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to create payment intent');
+        }
+    };
 
     useEffect(() => {
         const initializePage = async () => {
             try {
-                // Get booking details from sessionStorage
                 const bookingData = sessionStorage.getItem('bookingData');
                 const paymentIntent = sessionStorage.getItem('paymentIntent');
 
@@ -242,7 +381,6 @@ const PaymentPage = () => {
                 const parsedData = JSON.parse(bookingData);
                 const { clientSecret } = JSON.parse(paymentIntent);
 
-                // Validate booking data
                 if (!parsedData.rooms || !Array.isArray(parsedData.rooms) || parsedData.rooms.length === 0) {
                     throw new Error('Invalid booking data: No rooms selected');
                 }
@@ -251,19 +389,25 @@ const PaymentPage = () => {
                     throw new Error('Invalid booking data: Invalid amount');
                 }
 
-                // Use the price breakdown directly from the stored data
-                if (parsedData.priceBreakdown) {
-                    setPriceBreakdown(parsedData.priceBreakdown);
-                } else {
-                    // Fallback calculation if priceBreakdown is not available
-                    setPriceBreakdown({
-                        subtotal: parsedData.totalAmount * 0.93,
-                        tax: parsedData.totalAmount * 0.035,
-                        securityDeposit: 250,
-                        total: parsedData.totalAmount
-                    });
-                }
+                // Get user verification status
+                const userResponse = await fetch('/api/user/status');
+                const userData = await userResponse.json();
+                const isVerified = userData.isVerified;
 
+                // Calculate price breakdown based on verification status
+                const subtotal = parsedData.totalAmount * 0.93;
+                const tax = parsedData.totalAmount * 0.035;
+                const securityDeposit = isVerified ? 0 : 250 * parsedData.rooms.length; // $250 per room for unverified users
+
+                const priceBreakdownData = {
+                    subtotal,
+                    tax,
+                    securityDeposit,
+                    total: subtotal + tax + securityDeposit,
+                    isVerified
+                };
+
+                setPriceBreakdown(priceBreakdownData);
                 setClientSecret(clientSecret);
             } catch (error) {
                 console.error('Error processing booking data:', error);
@@ -279,11 +423,6 @@ const PaymentPage = () => {
         initializePage();
     }, [router]);
 
-    const handleBackClick = () => {
-        setError(null);
-        router.push('/summary');
-    };
-
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -294,15 +433,12 @@ const PaymentPage = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-            <header className="sticky top-0 left-0 right-0 z-50 bg-white shadow-md">
-                <Header />
-            </header>
-
+            <Header />
             <main className="container mx-auto px-4 py-8">
                 <div className="max-w-4xl mx-auto">
                     <button
-                        onClick={handleBackClick}
-                        className="mb-6 flex items-center text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                        onClick={() => router.push('/summary')}
+                        className="mb-6 flex items-center text-blue-600 hover:text-blue-800"
                     >
                         <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -310,17 +446,16 @@ const PaymentPage = () => {
                         Back to Summary
                     </button>
 
-                    <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
+                    <div className="bg-white rounded-2xl shadow-xl p-8">
                         <h1 className="text-3xl font-bold text-gray-800 mb-8">Payment Details</h1>
 
                         {error && (
-                            <div className="mb-6 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+                            <div className="mb-6 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded">
                                 <strong className="font-bold">Error: </strong>
                                 <span className="block sm:inline">{error}</span>
                             </div>
                         )}
 
-                        {/* Price Summary */}
                         <div className="mb-8">
                             <h2 className="text-xl font-semibold mb-4">Price Summary</h2>
                             <div className="space-y-3">
@@ -332,13 +467,17 @@ const PaymentPage = () => {
                                     <span>Tax (3.5%)</span>
                                     <span>${priceBreakdown.tax.toFixed(2)}</span>
                                 </div>
-                                <div className="flex justify-between text-gray-600">
-                                    <div>
-                                        <span>Security Deposit</span>
-                                        <div className="text-xs text-gray-500">($250 per room, refundable)</div>
+                                {!priceBreakdown.isVerified && (
+                                    <div className="flex justify-between text-gray-600">
+                                        <div>
+                                            <span>Security Deposit</span>
+                                            <div className="text-xs text-gray-500">
+                                                (Required for first booking - $250 per room, refundable)
+                                            </div>
+                                        </div>
+                                        <span>${priceBreakdown.securityDeposit.toFixed(2)}</span>
                                     </div>
-                                    <span>${priceBreakdown.securityDeposit.toFixed(2)}</span>
-                                </div>
+                                )}
                                 <div className="border-t border-gray-200 pt-3">
                                     <div className="flex justify-between font-semibold">
                                         <span>Total</span>
@@ -348,21 +487,28 @@ const PaymentPage = () => {
                             </div>
                         </div>
 
-                        {/* Stripe Payment Form */}
-                        {clientSecret ? (
-                            <Elements stripe={stripePromise} options={{ clientSecret }}>
-                                <PaymentForm priceBreakdown={priceBreakdown} clientSecret={clientSecret} />
-                            </Elements>
-                        ) : error ? (
-                            <div className="text-center py-4">
-                                <button
-                                    onClick={() => window.location.reload()}
-                                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                        {clientSecret && (
+                            <>
+                                <Elements
+                                    stripe={stripePromise}
+                                    options={{
+                                        clientSecret,
+                                        appearance,
+                                    }}
                                 >
-                                    Try Again
-                                </button>
-                            </div>
-                        ) : (
+                                    <PaymentForm priceBreakdown={priceBreakdown} clientSecret={clientSecret} />
+                                </Elements>
+
+                                <div className="mt-8 flex items-center justify-center space-x-2 text-gray-500 text-sm">
+                                    <span>Powered by</span>
+                                    <svg className="h-6" viewBox="0 0 60 25" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                                        <path d="M59.64 14.28h-8.06c.19 1.93 1.6 2.55 3.2 2.55 1.64 0 2.96-.37 4.05-.95v3.32a8.33 8.33 0 0 1-4.56 1.1c-4.01 0-6.83-2.5-6.83-7.48 0-4.19 2.39-7.52 6.3-7.52 3.92 0 5.96 3.28 5.96 7.5 0 .4-.04 1.26-.06 1.48zm-5.92-5.62c-1.03 0-2.17.73-2.17 2.58h4.25c0-1.85-1.07-2.58-2.08-2.58zM40.95 20.3c-1.44 0-2.32-.6-2.9-1.04l-.02 4.63-4.12.87V5.57h3.76l.1 1.03a4.7 4.7 0 0 1 3.28-1.29c3.28 0 5.52 3.33 5.52 7.52 0 4.7-2.25 7.47-5.62 7.47zM40 8.95c-.9 0-1.81.37-2.28.93l.02 7.43c.44.5 1.3.93 2.26.93 1.76 0 2.98-1.84 2.98-4.64 0-2.84-1.24-4.65-2.98-4.65zM28.24 5.57h4.13v14.44h-4.13V5.57zm0-4.7L32.37 0v3.36l-4.13.88V.88zm-4.32 9.35v9.79H19.8V5.57h3.7l.12 1.22c1-1.77 3.07-1.41 3.62-1.22v3.79c-.52-.17-2.29-.43-3.32.86zm-8.55 4.72c0 2.8 2.2 2.84 3.72 2.84v3.75c-2.15 0-4.31-.23-5.89-1.66-1.7-1.57-1.95-3.71-1.95-5.73V3.51l4.12-.88v4.01h3.72v3.35h-3.72v4.26zm-8.61-4.72v9.79H2.64V5.57h3.7l.12 1.22c1-1.77 3.07-1.41 3.62-1.22v3.79c-.52-.17-2.29-.43-3.32.86z" fillRule="evenodd"></path>
+                                    </svg>
+                                </div>
+                            </>
+                        )}
+
+                        {!clientSecret && !error && (
                             <div className="flex justify-center py-8">
                                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
                             </div>

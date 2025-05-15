@@ -22,6 +22,7 @@ interface BookingStatus {
     roomId: string;
     type: 'none' | 'booked' | 'partial';
     timeSlots: TimeSlot[];
+    status: 'pending' | 'confirmed' | 'cancelled';
 }
 
 interface UserData {
@@ -578,7 +579,8 @@ const CalendarPage: React.FC = () => {
 
             const status = bookingStatus.find(b =>
                 b.date === dateStr &&
-                b.roomId === roomIdStr
+                b.roomId === roomIdStr &&
+                b.status === 'confirmed' // Only consider confirmed bookings
             );
 
             if (!status || !Array.isArray(status.timeSlots)) return false;
@@ -609,7 +611,8 @@ const CalendarPage: React.FC = () => {
         // Get booking status for this date and room
         const status = bookingStatus.find(b =>
             b.date === dateStr &&
-            b.roomId === room.id.toString()
+            b.roomId === room.id.toString() &&
+            b.status === 'confirmed' // Only consider confirmed bookings
         );
 
         // If the date is selected
@@ -670,15 +673,38 @@ const CalendarPage: React.FC = () => {
         }
 
         try {
+            // Calculate time slots based on room.timeSlot
+            const getTimeSlot = (timeSlot: TimeSlot) => {
+                switch (timeSlot) {
+                    case 'morning':
+                        return { startTime: '08:00', endTime: '13:00' };
+                    case 'evening':
+                        return { startTime: '14:00', endTime: '19:00' };
+                    case 'full':
+                    default:
+                        return { startTime: '08:00', endTime: '19:00' };
+                }
+            };
+
             // Only include rooms that have dates selected in the booking data
             const bookingData = {
-                rooms: roomsWithDates.map(room => ({
-                    id: room.id,
-                    timeSlot: room.timeSlot,
-                    dates: room.dates || []
-                })),
+                rooms: roomsWithDates.map(room => {
+                    const timeSlotHours = getTimeSlot(room.timeSlot);
+                    return {
+                        roomId: room.id.toString(), // Convert to string as required by schema
+                        name: room.name,
+                        timeSlot: room.timeSlot,
+                        dates: room.dates.map(date => ({
+                            date: date,
+                            startTime: timeSlotHours.startTime,
+                            endTime: timeSlotHours.endTime
+                        }))
+                    };
+                }),
                 bookingType,
-                totalAmount: calculatePrice().total
+                totalAmount: calculatePrice().total,
+                status: 'pending',
+                paymentStatus: 'pending'
             };
 
             // Store in sessionStorage
@@ -702,8 +728,8 @@ const CalendarPage: React.FC = () => {
             toast.success('Proceeding to booking summary...');
             router.push('/booking/summary');
         } catch (error) {
-            console.error('Failed to proceed to summary:', error);
-            toast.error('Failed to proceed to booking summary. Please try again.');
+            console.error('Error preparing booking data:', error);
+            toast.error('Failed to prepare booking data');
         }
     };
 

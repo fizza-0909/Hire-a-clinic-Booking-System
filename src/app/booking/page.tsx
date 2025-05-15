@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import Header from '@/components/Header';
+import VerificationStatus from '@/components/VerificationStatus';
 
 type TimeSlot = 'full' | 'morning' | 'evening';
 
@@ -152,6 +153,7 @@ const BookingOptions = () => {
 
             <main className="container mx-auto px-4 py-8">
                 <div className="max-w-6xl mx-auto">
+                    <VerificationStatus />
                     <div className="text-center mb-12">
                         <h1 className="text-5xl font-bold text-gray-800 mb-4">Book Your Space</h1>
                         <p className="text-xl text-gray-600">Choose your preferred booking option and room(s)</p>
