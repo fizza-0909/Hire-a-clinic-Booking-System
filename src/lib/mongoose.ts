@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { connection } from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -45,7 +45,7 @@ async function dbConnect() {
         const retryConnect = async (retries = 5, delay = 5000): Promise<typeof mongoose> => {
             try {
                 console.log('Connecting to MongoDB...');
-                const mongoose = await mongoose.connect(MONGODB_URI!, options);
+                const connection = await mongoose.connect(MONGODB_URI!, options);
                 console.log('Successfully connected to MongoDB');
                 return mongoose;
             } catch (error) {
@@ -78,4 +78,4 @@ async function dbConnect() {
 export default dbConnect;
 
 // Export mongoose for model definitions
-export { mongoose }; 
+export { connection }; 
