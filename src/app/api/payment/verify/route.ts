@@ -53,7 +53,14 @@ export async function POST(req: Request) {
                 {
                     $set: {
                         status: 'confirmed',
-                        paymentStatus: 'completed',
+                        paymentStatus: 'succeeded',
+                        paymentDetails: {
+                            status: 'succeeded',
+                            confirmedAt: new Date(),
+                            amount: paymentIntent.amount,
+                            currency: paymentIntent.currency,
+                            paymentMethodType: paymentIntent.payment_method_types?.[0] || 'card'
+                        },
                         updatedAt: new Date()
                     }
                 }
@@ -76,6 +83,21 @@ export async function POST(req: Request) {
             const user = await User.findById(session.user.id);
             if (!user) {
                 return NextResponse.json({ error: 'User not found' }, { status: 404 });
+            }
+
+            // Update user verification status if not already verified
+            if (!user.isVerified) {
+                await User.findByIdAndUpdate(
+                    user._id,
+                    {
+                        $set: {
+                            isVerified: true,
+                            verifiedAt: new Date(),
+                            updatedAt: new Date()
+                        }
+                    }
+                );
+                console.log('Updated user verification status');
             }
 
             // Send confirmation email if user has email notifications enabled
@@ -120,11 +142,14 @@ export async function POST(req: Request) {
                     $set: {
                         status: 'cancelled',
                         paymentStatus: 'failed',
-                        updatedAt: new Date(),
-                        paymentError: {
-                            message: paymentIntent.last_payment_error?.message || 'Payment was not successful',
-                            code: paymentIntent.last_payment_error?.code,
-                            decline_code: paymentIntent.last_payment_error?.decline_code
+                        paymentDetails: {
+                            status: 'failed',
+                            updatedAt: new Date(),
+                            error: {
+                                message: paymentIntent.last_payment_error?.message || 'Payment was not successful',
+                                code: paymentIntent.last_payment_error?.code,
+                                decline_code: paymentIntent.last_payment_error?.decline_code
+                            }
                         }
                     }
                 }

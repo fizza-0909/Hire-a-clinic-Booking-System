@@ -1,18 +1,27 @@
 import mongoose from 'mongoose';
 
-declare global {
-    var mongoose: {
-        conn: typeof mongoose | null;
-        promise: Promise<typeof mongoose> | null;
-    } | undefined;
-}
+const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!process.env.MONGODB_URI) {
     throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
 }
 
-if (!process.env.MONGODB_DB) {
-    throw new Error('Please define the MONGODB_DB environment variable inside .env.local');
+const options: mongoose.ConnectOptions = {
+    serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+    socketTimeoutMS: 45000, // Increase socket timeout to 45 seconds
+    connectTimeoutMS: 30000,
+    maxPoolSize: 10,
+    minPoolSize: 5,
+    retryWrites: true,
+    retryReads: true,
+    w: 'majority',
+};
+
+declare global {
+    var mongoose: {
+        promise: Promise<typeof import('mongoose')> | null;
+        conn: typeof import('mongoose') | null;
+    };
 }
 
 /**
@@ -23,73 +32,49 @@ if (!process.env.MONGODB_DB) {
 let cached = global.mongoose;
 
 if (!cached) {
-    global.mongoose = { conn: null, promise: null };
+    cached = global.mongoose = { conn: null, promise: null };
 }
-
-cached = global.mongoose!;
 
 async function dbConnect() {
     if (cached.conn) {
+        console.log('Using cached MongoDB connection');
         return cached.conn;
     }
 
     if (!cached.promise) {
-        const opts = {
-            bufferCommands: true,
-            maxPoolSize: 10,
-            minPoolSize: 5,
-            maxIdleTimeMS: 30000,
-            connectTimeoutMS: 30000,
-            serverSelectionTimeoutMS: 30000,
-            socketTimeoutMS: 30000,
-            waitQueueTimeoutMS: 30000,
+        const retryConnect = async (retries = 5, delay = 5000): Promise<typeof mongoose> => {
+            try {
+                console.log('Connecting to MongoDB...');
+                const mongoose = await mongoose.connect(MONGODB_URI!, options);
+                console.log('Successfully connected to MongoDB');
+                return mongoose;
+            } catch (error) {
+                if (retries === 0) {
+                    throw error;
+                }
+                console.log(`MongoDB connection failed. Retrying in ${delay / 1000} seconds... (${retries} attempts remaining)`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return retryConnect(retries - 1, delay);
+            }
         };
 
-        mongoose.set('strictQuery', true);
-
-        cached.promise = mongoose.connect(process.env.MONGODB_URI!, opts)
-            .then(async (mongoose) => {
-                console.log('Connected to MongoDB');
-
-                // Get the Booking model collection
-                const Booking = mongoose.connection.collection('bookings');
-
-                // Drop all existing indexes
-                try {
-                    await Booking.dropIndexes();
-                    console.log('Successfully dropped all indexes');
-                } catch (error) {
-                    console.error('Error dropping indexes:', error);
-                }
-
-                // Create new indexes
-                try {
-                    await Booking.createIndex({ userId: 1, status: 1 });
-                    await Booking.createIndex({ paymentIntentId: 1 });
-                    console.log('Successfully created new indexes');
-                } catch (error) {
-                    console.error('Error creating indexes:', error);
-                }
-
-                return mongoose;
-            })
+        cached.promise = retryConnect()
             .catch((error) => {
-                console.error('MongoDB connection error:', error);
+                console.error('Failed to connect to MongoDB after all retries:', error);
                 throw error;
             });
     }
 
     try {
         cached.conn = await cached.promise;
-    } catch (e) {
+    } catch (error) {
         cached.promise = null;
-        throw e;
+        throw error;
     }
 
     return cached.conn;
 }
 
-// Export the connection function
 export default dbConnect;
 
 // Export mongoose for model definitions

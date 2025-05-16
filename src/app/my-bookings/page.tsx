@@ -167,21 +167,30 @@ const MyBookingsPage = () => {
     const getPaymentStatusText = (status: string | undefined) => {
         switch (status) {
             case 'succeeded':
+            case 'completed':
                 return 'Paid';
+            case 'pending':
+                return 'Payment Pending';
+            case 'failed':
             case 'rejected':
-                return 'Payment Rejected';
+                return 'Payment Failed';
             default:
-                return 'Payment Rejected';
+                return 'Payment Status Unknown';
         }
     };
 
     const getPaymentStatusColor = (status: string | undefined) => {
         switch (status) {
             case 'succeeded':
+            case 'completed':
                 return 'bg-green-100 text-green-800';
+            case 'pending':
+                return 'bg-yellow-100 text-yellow-800';
+            case 'failed':
             case 'rejected':
-            default:
                 return 'bg-red-100 text-red-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
         }
     };
 
@@ -352,19 +361,24 @@ const MyBookingsPage = () => {
                                                     ))}
                                                 </div>
 
-                                                {/* Payment Error Section */}
-                                                {booking.paymentDetails?.status === 'rejected' && (
-                                                    <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
-                                                        <h3 className="text-sm font-medium text-red-800 mb-2">Payment Failed</h3>
-                                                        <p className="text-sm text-red-700">{booking.paymentDetails.error?.message || 'Payment was rejected'}</p>
-                                                        {booking.paymentDetails.error?.code && (
-                                                            <p className="text-xs text-red-600 mt-1">Error Code: {booking.paymentDetails.error.code}</p>
-                                                        )}
-                                                        {booking.paymentDetails.error?.decline_code && (
-                                                            <p className="text-xs text-red-600 mt-1">Decline Code: {booking.paymentDetails.error.decline_code}</p>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                {/* Payment Status */}
+                                                <div className="mt-4">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(booking.paymentDetails?.status)}`}>
+                                                        {getPaymentStatusText(booking.paymentDetails?.status)}
+                                                    </span>
+                                                    {(booking.paymentDetails?.status === 'failed' || booking.paymentDetails?.status === 'rejected') && booking.paymentDetails?.error && (
+                                                        <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                                                            <h3 className="text-sm font-medium text-red-800 mb-2">Payment Failed</h3>
+                                                            <p className="text-sm text-red-700">{booking.paymentDetails.error.message || 'Payment was rejected'}</p>
+                                                            {booking.paymentDetails.error.code && (
+                                                                <p className="text-xs text-red-600 mt-1">Error Code: {booking.paymentDetails.error.code}</p>
+                                                            )}
+                                                            {booking.paymentDetails.error.decline_code && (
+                                                                <p className="text-xs text-red-600 mt-1">Decline Code: {booking.paymentDetails.error.decline_code}</p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             {/* Right Section - Price and Actions */}

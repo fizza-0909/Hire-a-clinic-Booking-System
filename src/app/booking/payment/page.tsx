@@ -66,7 +66,7 @@ interface TransformedBookingData {
             date: string;
             startTime: string;
             endTime: string;
-        }[];
+        }[];    
     }[];
     bookingType: 'daily' | 'monthly';
     totalAmount: number;

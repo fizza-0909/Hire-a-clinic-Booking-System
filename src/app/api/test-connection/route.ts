@@ -7,33 +7,31 @@ export async function GET() {
             throw new Error('MONGODB_URI is not defined');
         }
 
-        // Try to connect with a short timeout
-        await mongoose.connect(process.env.MONGODB_URI, {
-            connectTimeoutMS: 5000,
-            socketTimeoutMS: 5000,
-        });
+        // Try to connect to MongoDB
+        await mongoose.connect(process.env.MONGODB_URI);
 
-        // Test the connection
-        await mongoose.connection.db.admin().ping();
+        // Get connection status
+        const readyState = mongoose.connection.readyState;
+        const status = {
+            0: 'disconnected',
+            1: 'connected',
+            2: 'connecting',
+            3: 'disconnecting',
+            99: 'uninitialized'
+        }[readyState];
 
         return NextResponse.json({
-            success: true,
-            message: 'Successfully connected to MongoDB',
-            database: mongoose.connection.db.databaseName
+            status: 'success',
+            connection: status,
+            database: mongoose.connection.db.databaseName,
+            host: mongoose.connection.host
         });
-    } catch (error: any) {
+    } catch (error) {
         console.error('MongoDB connection test failed:', error);
         return NextResponse.json({
-            success: false,
-            error: error.message || 'Failed to connect to MongoDB',
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error',
             details: error
         }, { status: 500 });
-    } finally {
-        // Close the connection
-        try {
-            await mongoose.disconnect();
-        } catch (error) {
-            console.error('Error disconnecting from MongoDB:', error);
-        }
     }
 } 

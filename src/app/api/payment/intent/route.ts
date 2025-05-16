@@ -6,9 +6,15 @@ import dbConnect from '@/lib/mongoose';
 import { Booking } from '@/models/Booking';
 import User from '@/models/User';
 
+interface BookingDate {
+    date: string;
+    startTime: string;
+    endTime: string;
+}
+
 interface BookingRoom {
     id: number;
-    timeSlot: string;
+    timeSlot: 'full' | 'morning' | 'evening';
     dates: string[];
 }
 
@@ -25,6 +31,20 @@ if (!process.env.STRIPE_SECRET_KEY) {
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2023-10-16'
 });
+
+// Helper function to format date string
+const formatDateString = (dateStr: string) => {
+    try {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+            throw new Error('Invalid date components');
+        }
+        return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    } catch (error) {
+        console.error('Error formatting date:', error);
+        throw new Error('Invalid date format');
+    }
+};
 
 export async function POST(req: Request) {
     try {
@@ -140,10 +160,32 @@ export async function POST(req: Request) {
             booking = await Booking.create({
                 userId: session.user.id,
                 rooms: bookingData.rooms.map(room => ({
-                    id: room.id,
+                    roomId: room.id.toString(),  // Convert to string as required
                     name: `Room ${room.id}`,
                     timeSlot: room.timeSlot,
-                    dates: room.dates
+                    dates: room.dates.map(date => {
+                        // Get time slots based on booking type
+                        const timeSlots = (() => {
+                            switch (room.timeSlot) {
+                                case 'morning':
+                                    return { startTime: '08:00', endTime: '13:00' };
+                                case 'evening':
+                                    return { startTime: '14:00', endTime: '19:00' };
+                                case 'full':
+                                default:
+                                    return { startTime: '08:00', endTime: '19:00' };
+                            }
+                        })();
+
+                        // Format the date string properly
+                        const formattedDate = formatDateString(date);
+
+                        return {
+                            date: formattedDate,
+                            startTime: timeSlots.startTime,
+                            endTime: timeSlots.endTime
+                        };
+                    })
                 })),
                 bookingType: bookingData.bookingType,
                 totalAmount: amount / 100,

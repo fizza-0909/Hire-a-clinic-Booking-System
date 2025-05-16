@@ -686,19 +686,29 @@ const CalendarPage: React.FC = () => {
                 }
             };
 
+            // Validate and format dates before storing
+            const validateAndFormatDate = (dateStr: string): string => {
+                try {
+                    const [year, month, day] = dateStr.split('-').map(Number);
+                    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+                        throw new Error('Invalid date components');
+                    }
+                    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                } catch (error) {
+                    console.error('Error formatting date:', error);
+                    throw new Error(`Invalid date format: ${dateStr}`);
+                }
+            };
+
             // Only include rooms that have dates selected in the booking data
             const bookingData = {
                 rooms: roomsWithDates.map(room => {
                     const timeSlotHours = getTimeSlot(room.timeSlot);
                     return {
-                        roomId: room.id.toString(), // Convert to string as required by schema
-                        name: room.name,
+                        id: room.id,
+                        name: `Room ${room.id}`,
                         timeSlot: room.timeSlot,
-                        dates: room.dates.map(date => ({
-                            date: date,
-                            startTime: timeSlotHours.startTime,
-                            endTime: timeSlotHours.endTime
-                        }))
+                        dates: room.dates.map(date => validateAndFormatDate(date))
                     };
                 }),
                 bookingType,

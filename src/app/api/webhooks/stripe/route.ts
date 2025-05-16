@@ -128,9 +128,15 @@ export async function POST(req: Request) {
                     {
                         $set: {
                             status: 'confirmed',
-                            'paymentDetails.status': 'succeeded',
-                            'paymentDetails.confirmedAt': new Date(),
-                            'paymentDetails.paymentIntentId': paymentIntent.id,
+                            paymentStatus: 'succeeded',
+                            paymentDetails: {
+                                status: 'succeeded',
+                                confirmedAt: new Date(),
+                                paymentIntentId: paymentIntent.id,
+                                amount: paymentIntent.amount,
+                                currency: paymentIntent.currency,
+                                paymentMethodType: paymentIntent.payment_method_types?.[0] || 'card'
+                            },
                             updatedAt: new Date()
                         }
                     }

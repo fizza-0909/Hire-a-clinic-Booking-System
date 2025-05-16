@@ -155,14 +155,34 @@ const SummaryPage = () => {
     };
 
     const formatDate = (dateStr: string) => {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const date = new Date(year, month - 1, day);
-        return date.toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric'
-        });
+        try {
+            if (!dateStr || typeof dateStr !== 'string') {
+                console.error('Invalid date input:', dateStr);
+                return 'Invalid date';
+            }
+
+            const [year, month, day] = dateStr.split('-').map(Number);
+            if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+                console.error('Invalid date components:', { year, month, day });
+                return 'Invalid date';
+            }
+
+            const date = new Date(year, month - 1, day);
+            if (isNaN(date.getTime())) {
+                console.error('Invalid date object:', date);
+                return 'Invalid date';
+            }
+
+            return date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        } catch (error) {
+            console.error('Error formatting date:', error);
+            return 'Invalid date';
+        }
     };
 
     const handleProceedToPayment = async () => {
