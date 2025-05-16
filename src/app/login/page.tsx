@@ -10,7 +10,7 @@ function LoginForm() {
     const searchParams = useSearchParams();
     const { data: session, status } = useSession();
     const [isLoading, setIsLoading] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
+    const [showPassword, setShowPassword] = useState(true);
     const [formData, setFormData] = useState({
         email: '',
         password: ''
