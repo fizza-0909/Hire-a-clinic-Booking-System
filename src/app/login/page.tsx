@@ -29,7 +29,7 @@ function LoginForm() {
         e.preventDefault();
         setIsLoading(true);
         const loadingToast = toast.loading('Signing in...');
-
+        
         try {
             console.log('Attempting to sign in with email:', formData.email);
             const result = await signIn('credentials', {
@@ -40,7 +40,7 @@ function LoginForm() {
             });
 
             console.log('Sign in result:', result);
-
+            
             if (result?.error) {
                 toast.dismiss(loadingToast);
                 console.error('Login error:', result.error);
