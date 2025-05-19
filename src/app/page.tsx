@@ -14,7 +14,7 @@ export default function Home() {
             <main className="flex-grow flex flex-col items-center justify-center bg-gray-50 px-4">
                 <div className="max-w-3xl mx-auto text-center">
                     <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-                        Texas Medical Clinic Booking
+                        HIRE A CLINIC Booking  Portal
                     </h1>
                     <p className="text-xl text-gray-600 mb-8">
                         Book medical clinic rooms for your practice with ease
