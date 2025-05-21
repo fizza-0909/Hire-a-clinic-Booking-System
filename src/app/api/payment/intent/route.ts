@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongoose';
 import { Booking } from '@/models/Booking';
 import User from '@/models/User';
+import { sendEmail, getBookingConfirmationEmail } from '@/lib/email';
 
 interface BookingDate {
     date: string;
@@ -12,38 +13,45 @@ interface BookingDate {
     endTime: string;
 }
 
-interface BookingRoom {
-    id: number;
-    timeSlot: 'full' | 'morning' | 'evening';
-    dates: string[];
-}
+interface BookingRoom {    roomId: string;    name: string;    timeSlot: 'full' | 'morning' | 'evening';    dates: BookingDate[];}
 
 interface BookingData {
     rooms: BookingRoom[];
     bookingType: 'daily' | 'monthly';
     totalAmount: number;
+    includesSecurityDeposit: boolean;
 }
 
 if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2023-10-16'
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2025-04-30.basil'
 });
 
-// Helper function to format date string
-const formatDateString = (dateStr: string) => {
+// Helper function to validate date string
+const isValidDate = (dateStr: string): boolean => {
     try {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
-            throw new Error('Invalid date components');
-        }
-        return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    } catch (error) {
-        console.error('Error formatting date:', error);
-        throw new Error('Invalid date format');
+        const date = new Date(dateStr);
+        return !isNaN(date.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+    } catch {
+        return false;
     }
+};
+
+// Helper function to validate time string
+const isValidTime = (timeStr: string): boolean => {
+    return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(timeStr);
+};
+
+// Helper function to validate booking date object
+const isValidBookingDate = (bookingDate: BookingDate): boolean => {
+    return (
+        isValidDate(bookingDate.date) &&
+        isValidTime(bookingDate.startTime) &&
+        isValidTime(bookingDate.endTime)
+    );
 };
 
 export async function POST(req: Request) {
@@ -51,29 +59,40 @@ export async function POST(req: Request) {
         // Check authentication
         const session = await getServerSession(authOptions);
         if (!session?.user?.id) {
+            console.error('Unauthorized access attempt:', { session });
             return NextResponse.json(
-                { error: 'Unauthorized' },
+                { error: 'Please login to continue with payment' },
                 { status: 401 }
             );
         }
 
-        const { amount, bookingData } = await req.json();
-        console.log('Received payment intent request:', { amount, bookingData });
+        // Parse and validate request body
+        let amount: number, bookingData: BookingData;
+        try {
+            const body = await req.json();
+            amount = body.amount;
+            bookingData = body.bookingData;
 
-        // Validate amount
-        if (!amount || amount <= 0) {
-            console.error('Invalid amount:', amount);
-            return NextResponse.json(
-                { error: 'Please provide a valid payment amount' },
-                { status: 400 }
+            if (!amount || typeof amount !== 'number' || amount <= 0) {
+                throw new Error('Invalid amount');
+            }
+
+            if (!bookingData?.rooms || !Array.isArray(bookingData.rooms) || bookingData.rooms.length === 0) {
+                throw new Error('Invalid booking data');
+            }
+
+            // Validate dates in booking data
+            const hasInvalidDates = bookingData.rooms.some(room => 
+                room.dates.some(date => !isValidBookingDate(date))
             );
-        }
 
-        // Validate booking data
-        if (!bookingData || !bookingData.rooms || bookingData.rooms.length === 0) {
-            console.error('Invalid booking data:', bookingData);
+            if (hasInvalidDates) {
+                throw new Error('Invalid dates in booking data');
+            }
+        } catch (error) {
+            console.error('Request validation error:', error);
             return NextResponse.json(
-                { error: 'Please select at least one room to book' },
+                { error: 'Invalid request data' },
                 { status: 400 }
             );
         }
@@ -81,147 +100,154 @@ export async function POST(req: Request) {
         await dbConnect();
         console.log('Connected to database');
 
-        // Get user details and check/create Stripe customer
+        // Get user details and check verification status
         const user = await User.findById(session.user.id);
         if (!user) {
-            throw new Error('User not found');
+            console.error('User not found:', session.user.id);
+            return NextResponse.json(
+                { error: 'User not found' },
+                { status: 404 }
+            );
         }
 
-        let stripeCustomerId = user.stripeCustomerId;
+        // Check security deposit requirement
+        const requiresSecurityDeposit = !user.isVerified;
+        if (requiresSecurityDeposit && !bookingData.includesSecurityDeposit) {
+            console.error('Security deposit required but not included');
+            return NextResponse.json(
+                { error: 'Security deposit is required for unverified users' },
+                { status: 400 }
+            );
+        }
 
-        // If user doesn't have a Stripe customer ID, create one
+        // Create or retrieve Stripe customer
+        let stripeCustomerId = user.stripeCustomerId;
         if (!stripeCustomerId) {
             console.log('Creating new Stripe customer for user');
-            const customer = await stripe.customers.create({
-                email: user.email,
-                name: `${user.firstName} ${user.lastName}`,
-                metadata: {
-                    userId: user._id.toString()
-                }
-            });
-            stripeCustomerId = customer.id;
+            try {
+                const customer = await stripe.customers.create({
+                    email: user.email,
+                    name: `${user.firstName} ${user.lastName}`,
+                    metadata: {
+                        userId: user._id.toString(),
+                        isVerified: user.isVerified ? 'true' : 'false'
+                    }
+                });
+                stripeCustomerId = customer.id;
 
-            // Save Stripe customer ID to user
-            await User.findByIdAndUpdate(user._id, {
-                stripeCustomerId: customer.id
-            });
-            console.log('Saved Stripe customer ID to user');
+                // Save Stripe customer ID to user
+                await User.findByIdAndUpdate(user._id, {
+                    stripeCustomerId: customer.id
+                });
+                console.log('Saved Stripe customer ID to user');
+            } catch (error) {
+                console.error('Error creating Stripe customer:', error);
+                return NextResponse.json(
+                    { error: 'Failed to create payment profile' },
+                    { status: 500 }
+                );
+            }
         }
 
-        // Check for existing incomplete payment intents
-        const existingPaymentIntents = await stripe.paymentIntents.list({
-            customer: stripeCustomerId,
-            limit: 5
-        });
-
-        const matchingIntent = existingPaymentIntents.data.find(intent =>
-            intent.amount === Math.round(amount) &&
-            intent.status === 'requires_payment_method' &&
-            Date.now() - intent.created * 1000 < 3600000 // Less than 1 hour old
-        );
-
-        let paymentIntent;
-        if (matchingIntent) {
-            console.log('Found existing payment intent:', matchingIntent.id);
-            paymentIntent = matchingIntent;
-        } else {
-            // Create a new PaymentIntent
-            paymentIntent = await stripe.paymentIntents.create({
-                amount: Math.round(amount),
-                currency: 'usd',
-                customer: stripeCustomerId,
-                automatic_payment_methods: {
-                    enabled: true,
-                },
-                metadata: {
-                    userId: session.user.id
-                }
-            });
-            console.log('Created new payment intent:', {
-                id: paymentIntent.id,
-                amount: paymentIntent.amount
-            });
-        }
-
-        // Check for existing pending booking
-        const existingBooking = await Booking.findOne({
-            userId: session.user.id,
-            totalAmount: amount / 100,
-            status: 'pending',
-            createdAt: { $gt: new Date(Date.now() - 3600000) } // Less than 1 hour old
-        });
-
-        let booking;
-        if (existingBooking) {
-            console.log('Found existing booking:', existingBooking._id);
-            booking = existingBooking;
-        } else {
-            // Create new booking
-            booking = await Booking.create({
+        // Create pending bookings
+        const bookingPromises = bookingData.rooms.map(room => 
+            Booking.create({
                 userId: session.user.id,
-                rooms: bookingData.rooms.map(room => ({
-                    roomId: room.id.toString(),  // Convert to string as required
-                    name: `Room ${room.id}`,
+                rooms: [{
+                    roomId: room.roomId,
+                    name: room.name,
                     timeSlot: room.timeSlot,
-                    dates: room.dates.map(date => {
-                        // Get time slots based on booking type
-                        const timeSlots = (() => {
-                            switch (room.timeSlot) {
-                                case 'morning':
-                                    return { startTime: '08:00', endTime: '13:00' };
-                                case 'evening':
-                                    return { startTime: '14:00', endTime: '19:00' };
-                                case 'full':
-                                default:
-                                    return { startTime: '08:00', endTime: '19:00' };
-                            }
-                        })();
-
-                        // Format the date string properly
-                        const formattedDate = formatDateString(date);
-
-                        return {
-                            date: formattedDate,
-                            startTime: timeSlots.startTime,
-                            endTime: timeSlots.endTime
-                        };
-                    })
-                })),
+                    dates: room.dates
+                }],
                 bookingType: bookingData.bookingType,
-                totalAmount: amount / 100,
                 status: 'pending',
                 paymentStatus: 'pending',
-                paymentIntentId: paymentIntent.id,
-                stripeCustomerId: stripeCustomerId,
+                totalAmount: amount / 100, // Store in dollars
                 createdAt: new Date(),
                 updatedAt: new Date()
-            });
-            console.log('Created new booking:', {
-                id: booking._id,
-                rooms: booking.rooms.length,
-                amount: booking.totalAmount
-            });
-        }
+            })
+        );
 
-        // Ensure payment intent has the booking ID
-        if (!paymentIntent.metadata.bookingIds) {
-            await stripe.paymentIntents.update(paymentIntent.id, {
-                metadata: {
-                    ...paymentIntent.metadata,
-                    bookingIds: booking._id.toString()
+        const bookings = await Promise.all(bookingPromises);
+        const bookingIds = bookings.map(booking => booking._id.toString());
+
+        // Create Stripe payment intent
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: 'usd',
+            customer: stripeCustomerId,
+            automatic_payment_methods: {
+                enabled: true,
+            },
+            metadata: {
+                userId: session.user.id,
+                bookingIds: bookingIds.join(','),
+                bookingType: bookingData.bookingType,
+                roomCount: bookingData.rooms.length.toString(),
+                includesSecurityDeposit: requiresSecurityDeposit ? 'true' : 'false'
+            }
+        });
+
+        // Update bookings with payment intent ID
+        await Booking.updateMany(
+            { _id: { $in: bookingIds } },
+            {
+                $set: {
+                    'paymentDetails.paymentIntentId': paymentIntent.id,
+                    updatedAt: new Date()
                 }
-            });
-            console.log('Updated payment intent with booking ID');
-        }
+            }
+        );
+
+        // Send confirmation email
+        const emailData = {
+            customerName: `${user.firstName} ${user.lastName}`,
+            bookingNumber: bookingIds[0], // Use first booking ID as reference
+            roomDetails: bookingData.rooms.map(room => ({
+                roomNumber: room.roomId,
+                timeSlot: room.timeSlot === 'morning' ? '8:00 AM - 12:00 PM' :
+                         room.timeSlot === 'evening' ? '1:00 PM - 5:00 PM' :
+                         '8:00 AM - 5:00 PM',
+                dates: room.dates.map(date => 
+                    new Date(date.date).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    })
+                )
+            })),
+            paymentDetails: {
+                subtotal: amount / 100 - (requiresSecurityDeposit ? 250 : 0),
+                tax: (amount / 100) * 0.035,
+                securityDeposit: requiresSecurityDeposit ? 250 : 0,
+                totalAmount: amount / 100
+            }
+        };
+
+        const emailTemplate = getBookingConfirmationEmail(emailData);
+        await sendEmail({
+            to: user.email,
+            ...emailTemplate
+        });
+
+        console.log('Created payment intent:', {
+            id: paymentIntent.id,
+            amount: paymentIntent.amount,
+            status: paymentIntent.status,
+            bookingIds,
+            includesSecurityDeposit: requiresSecurityDeposit
+        });
 
         return NextResponse.json({
             clientSecret: paymentIntent.client_secret,
-            bookingIds: [booking._id.toString()]
+            bookingIds,
+            requiresSecurityDeposit
         });
     } catch (error) {
-        console.error('Payment intent creation failed:', error);
+        console.error('Payment intent creation error:', error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Failed to create payment intent' },
+            { error: 'Failed to create payment intent. Please try again.' },
             { status: 500 }
         );
     }

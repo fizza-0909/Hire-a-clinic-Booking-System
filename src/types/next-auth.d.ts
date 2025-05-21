@@ -9,6 +9,10 @@ declare module "next-auth" {
             firstName: string;
             lastName: string;
             phoneNumber?: string;
+            isEmailVerified: boolean;
+            isVerified: boolean; // For security deposit purposes
+            role: string;
+            isProfileVerified: boolean;
         }
     }
 
@@ -19,5 +23,20 @@ declare module "next-auth" {
         firstName: string;
         lastName: string;
         phoneNumber?: string;
+        isEmailVerified: boolean;
+        isVerified: boolean;
+        isProfileVerified: boolean;
+    }
+}
+
+declare module "next-auth/jwt" {
+    interface JWT {
+        id: string;
+        email: string;
+        name: string;
+        firstName: string;
+        lastName: string;
+        isEmailVerified: boolean;
+        isVerified: boolean;
     }
 } 

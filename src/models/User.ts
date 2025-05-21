@@ -33,6 +33,30 @@ const userSchema = new Schema({
         type: Boolean,
         default: false
     },
+    isEmailVerified: {
+        type: Boolean,
+        default: false
+    },
+    verifiedAt: {
+        type: Date
+    },
+    verificationToken: {
+        type: String,
+        select: false
+    },
+    verificationCode: {
+        type: String,
+        select: false
+    },
+    verificationTokenExpiry: {
+        type: Date,
+        select: false
+    },
+    role: {
+        type: String,
+        enum: ['user', 'admin'],
+        default: 'user'
+    },
     stripeCustomerId: {
         type: String,
         sparse: true  // Allows null values and creates a sparse index
@@ -70,11 +94,4 @@ userSchema.pre('save', async function (next) {
     }
 });
 
-// Create full name virtual
-userSchema.virtual('fullName').get(function () {
-    return `${this.firstName} ${this.lastName}`;
-});
-
-const User = models.User || model('User', userSchema);
-
-export default User; 
+export default models.User || model('User', userSchema);

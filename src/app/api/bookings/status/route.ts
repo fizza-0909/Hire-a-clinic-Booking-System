@@ -57,14 +57,12 @@ export async function POST(req: Request) {
 
         // Find bookings for the specified room and date range
         const bookings = (await Booking.find({
-            'rooms': {
-                $elemMatch: {
-                    'roomId': roomId.toString(),
-                    'dates.date': {
-                        $in: datesInMonth.map(d => d.date)
-                    }
-                }
-            }
+            'rooms.roomId': roomId.toString(),
+            'rooms.dates.date': {
+                $gte: startDate.toISOString().split('T')[0],
+                $lte: endDate.toISOString().split('T')[0]
+            },
+            status: { $in: ['pending', 'confirmed'] }
         }).select('rooms status').lean()) as unknown as BookingDocument[];
 
         console.log(`Found ${bookings.length} bookings for room ${roomId}`);
@@ -87,9 +85,20 @@ export async function POST(req: Request) {
                 }));
         });
 
-        console.log('Formatted bookings:', formattedBookings);
+        // Combine bookings for the same date
+        const combinedBookings = formattedBookings.reduce((acc, curr) => {
+            const existingBooking = acc.find(b => b.date === curr.date);
+            if (existingBooking) {
+                existingBooking.timeSlots = [...new Set([...existingBooking.timeSlots, ...curr.timeSlots])];
+            } else {
+                acc.push(curr);
+            }
+            return acc;
+        }, [] as typeof formattedBookings);
 
-        return NextResponse.json({ bookings: formattedBookings });
+        console.log('Formatted bookings:', combinedBookings);
+
+        return NextResponse.json({ bookings: combinedBookings });
     } catch (error) {
         console.error('Error fetching booking status:', error);
         return NextResponse.json(

@@ -1,50 +1,17 @@
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import dbConnect from '@/lib/mongoose';
 import User from '@/models/User';
-import { sendEmail, getRegistrationConfirmationEmail } from '@/lib/email';
+import { sendVerificationEmail } from '@/lib/email';
 
 export async function POST(req: Request) {
-    console.log('Starting registration process...');
-
-    // Connect to MongoDB
     try {
-        await dbConnect();
-        console.log('Successfully connected to MongoDB');
-    } catch (dbError) {
-        console.error('MongoDB connection error:', dbError);
-        return NextResponse.json(
-            { error: 'Database connection failed' },
-            { status: 500 }
-        );
-    }
+        const { firstName, lastName, email, password, phoneNumber } = await req.json();
 
-    // Parse request body
-    let body;
-    try {
-        body = await req.json();
-        console.log('Received registration data:', { ...body, password: '[REDACTED]' });
-    } catch (parseError) {
-        console.error('Failed to parse request body:', parseError);
-        return NextResponse.json(
-            { error: 'Invalid request format' },
-            { status: 400 }
-        );
-    }
-
-    try {
-        const { firstName, lastName, email, phoneNumber, password } = body;
-
-        // Validate input
-        if (!firstName || !lastName || !email || !password || !phoneNumber) {
-            console.log('Missing required fields:', {
-                firstName: !!firstName,
-                lastName: !!lastName,
-                email: !!email,
-                password: !!password,
-                phoneNumber: !!phoneNumber
-            });
+        // Validate required fields
+        if (!firstName || !lastName || !email || !password) {
             return NextResponse.json(
-                { error: 'All fields are required' },
+                { error: 'Missing required fields' },
                 { status: 400 }
             );
         }
@@ -52,101 +19,97 @@ export async function POST(req: Request) {
         // Validate email format
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
-            console.log('Invalid email format:', email);
             return NextResponse.json(
                 { error: 'Invalid email format' },
                 { status: 400 }
             );
         }
 
-        // Validate phone number format
-        const phoneRegex = /^\+?1?\d{9,15}$/;
-        if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
-            console.log('Invalid phone number format:', phoneNumber);
-            return NextResponse.json(
-                { error: 'Invalid phone number format. Please enter a valid phone number.' },
-                { status: 400 }
-            );
-        }
-
         // Validate password strength
         if (password.length < 8) {
-            console.log('Password too short');
             return NextResponse.json(
                 { error: 'Password must be at least 8 characters long' },
                 { status: 400 }
             );
         }
 
+        // Connect to database
+        await dbConnect();
+
         // Check if user already exists
-        const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+        const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
-            console.log('Email already registered:', email);
             return NextResponse.json(
                 { error: 'Email already registered' },
                 { status: 409 }
             );
         }
 
-        // Create user using Mongoose model
-        console.log('Creating new user...');
+        // Create new user (password will be hashed by the model's pre-save hook)
         const user = await User.create({
-            firstName: firstName.trim(),
-            lastName: lastName.trim(),
-            email: email.toLowerCase().trim(),
-            phoneNumber: phoneNumber?.trim(),
-            password,
-            hasBookings: false
+            firstName,
+            lastName,
+            email: email.toLowerCase(),
+            password, // No need to hash here, the model will do it
+            phoneNumber,
+            isVerified: false,
+            isEmailVerified: false,
+            role: 'user',
+            createdAt: new Date(),
+            updatedAt: new Date()
         });
 
-        // Send welcome email
+        // Generate verification token
+        const verificationToken = await bcrypt.hash(user._id.toString() + Date.now().toString(), 12);
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
+
+        // Save verification token and code
+        user.verificationToken = verificationToken;
+        user.verificationCode = verificationCode;
+        await user.save();
+
+        // Send verification email
         try {
-            const { subject, html } = getRegistrationConfirmationEmail({
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email
+            console.log('Attempting to send verification email to:', user.email);
+            await sendVerificationEmail(
+                user.email,
+                verificationToken,
+                verificationCode
+            );
+            console.log('Verification email sent successfully to:', user.email);
+        } catch (emailError) {
+            console.error('Failed to send verification email:', emailError);
+            console.error('Error details:', {
+                name: emailError instanceof Error ? emailError.name : 'Unknown',
+                message: emailError instanceof Error ? emailError.message : String(emailError),
+                stack: emailError instanceof Error ? emailError.stack : undefined
             });
-
-            await sendEmail({
-                to: user.email,
-                subject,
-                html
-            });
-
-            console.log('Registration confirmation email sent successfully');
-        } catch (error) {
-            console.error('Failed to send registration confirmation email:', error);
-            // Don't throw error here as registration is still successful
+            // Don't fail registration if email fails, but log it
         }
 
-        console.log('User created successfully:', user._id.toString());
+        // Remove sensitive data from response
+        const userResponse = {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            isVerified: user.isVerified,
+            role: user.role
+        };
+
         return NextResponse.json({
-            success: true,
             message: 'User registered successfully',
-            userId: user._id.toString()
-        });
-    } catch (error: any) {
+            user: userResponse
+        }, { status: 201 });
+
+    } catch (error) {
         console.error('Registration error:', error);
-
-        // Handle duplicate email error
-        if (error.code === 11000) {
-            return NextResponse.json(
-                { error: 'Email already registered' },
-                { status: 409 }
-            );
-        }
-
-        // Handle validation errors
-        if (error.name === 'ValidationError') {
-            const validationErrors = Object.values(error.errors).map((err: any) => err.message);
-            return NextResponse.json(
-                { error: validationErrors.join(', ') },
-                { status: 400 }
-            );
-        }
-
         return NextResponse.json(
-            { error: 'Failed to register user' },
+            { 
+                error: 'Registration failed',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            },
             { status: 500 }
         );
     }

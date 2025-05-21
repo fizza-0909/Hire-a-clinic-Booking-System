@@ -19,6 +19,7 @@ export default function Register() {
         confirmPassword: ''
     });
     const [passwordMatch, setPasswordMatch] = useState(true);
+    const [error, setError] = useState('');
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -59,6 +60,7 @@ export default function Register() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
         setIsLoading(true);
 
         // Validate passwords match
@@ -86,31 +88,26 @@ export default function Register() {
         }
 
         try {
-            const response = await fetch('/api/auth/register', {
+            const res = await fetch('/api/auth/register', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    firstName: formData.firstName,
-                    lastName: formData.lastName,
-                    email: formData.email,
-                    phoneNumber: formData.phoneNumber,
-                    password: formData.password
-                }),
+                body: JSON.stringify(formData),
             });
+            const data = await res.json();
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Registration failed');
+            if (res.ok) {
+                toast.success('Registration successful! Please verify your email.');
+                // Redirect to verification page with email
+                router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
+            } else {
+                toast.error(data.error || 'Registration failed');
+                setError(data.error || 'Registration failed');
             }
-
-            // Registration successful
-            toast.success('Registration successful! Please log in.');
-            router.push('/login');
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Registration failed');
+            toast.error('An error occurred during registration');
+            setError('An error occurred during registration');
         } finally {
             setIsLoading(false);
         }
@@ -252,6 +249,20 @@ export default function Register() {
                                 </p>
                             )}
                         </div>
+                        {error && (
+                            <div className="rounded-md bg-red-50 p-4">
+                                <div className="flex">
+                                    <div className="flex-shrink-0">
+                                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-3">
+                                        <p className="text-sm font-medium text-red-800">{error}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <button
                             type="submit"
                             disabled={isLoading}

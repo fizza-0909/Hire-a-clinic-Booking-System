@@ -1,10 +1,30 @@
-import { Schema, model, models } from 'mongoose';
-import { TimeSlot, BookingType } from '@/constants/pricing';
+import mongoose, { Document, Model } from 'mongoose';
+import { TimeSlot, BookingType } from '@/types/booking';
 
-const bookingSchema = new Schema({
+interface IBooking extends Document {
+    userId: string;
+    rooms: Array<{
+        roomId: string;
+        name: string;
+        timeSlot: TimeSlot;
+        dates: Array<{
+            date: string;
+            startTime: string;
+            endTime: string;
+        }>;
+    }>;
+    bookingType: BookingType;
+    totalAmount: number;
+    status: 'pending' | 'confirmed' | 'cancelled';
+    paymentStatus: 'pending' | 'completed' | 'failed';
+    paymentIntentId?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const bookingSchema = new mongoose.Schema({
     userId: {
-        type: Schema.Types.ObjectId,
-        ref: 'User',
+        type: String,
         required: true
     },
     rooms: [{
@@ -24,15 +44,36 @@ const bookingSchema = new Schema({
         dates: [{
             date: {
                 type: String,
-                required: true
+                required: true,
+                validate: {
+                    validator: function(v: string) {
+                        // Validate YYYY-MM-DD format
+                        return /^\d{4}-\d{2}-\d{2}$/.test(v);
+                    },
+                    message: (props: { value: string }) => `${props.value} is not a valid date format! Use YYYY-MM-DD`
+                }
             },
             startTime: {
                 type: String,
-                required: true
+                required: true,
+                validate: {
+                    validator: function(v: string) {
+                        // Validate HH:mm format
+                        return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(v);
+                    },
+                    message: (props: { value: string }) => `${props.value} is not a valid time format! Use HH:mm`
+                }
             },
             endTime: {
                 type: String,
-                required: true
+                required: true,
+                validate: {
+                    validator: function(v: string) {
+                        // Validate HH:mm format
+                        return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(v);
+                    },
+                    message: (props: { value: string }) => `${props.value} is not a valid time format! Use HH:mm`
+                }
             }
         }]
     }],
@@ -43,32 +84,20 @@ const bookingSchema = new Schema({
     },
     totalAmount: {
         type: Number,
-        required: true
+        required: true,
+        min: 0
     },
     status: {
         type: String,
-        enum: ['pending', 'confirmed', 'cancelled', 'failed'],
+        enum: ['pending', 'confirmed', 'cancelled'],
         default: 'pending'
     },
     paymentStatus: {
         type: String,
-        enum: ['pending', 'succeeded', 'failed'],
+        enum: ['pending', 'completed', 'failed'],
         default: 'pending'
     },
-    paymentIntentId: {
-        type: String,
-        sparse: true
-    },
-    stripeCustomerId: {
-        type: String,
-        sparse: true
-    },
-    paymentDetails: {
-        status: String,
-        confirmedAt: Date,
-        failedAt: Date,
-        failureMessage: String
-    },
+    paymentIntentId: String,
     createdAt: {
         type: Date,
         default: Date.now
@@ -77,42 +106,44 @@ const bookingSchema = new Schema({
         type: Date,
         default: Date.now
     }
-}, {
-    timestamps: true
 });
 
-// Add indexes for common queries
-bookingSchema.index({ userId: 1, status: 1 });
-bookingSchema.index({ paymentIntentId: 1 });
-
 // Validate dates don't overlap for same room and time slot
-bookingSchema.pre('save', async function (next) {
+bookingSchema.pre('save', async function(next) {
     try {
+        const BookingModel = this.constructor as Model<IBooking>;
         // Check each room in the booking
         for (const room of this.rooms) {
-            const existingBooking = await this.constructor.findOne({
-                _id: { $ne: this._id },
-                'rooms': {
-                    $elemMatch: {
-                        'roomId': room.roomId,
-                        'timeSlot': room.timeSlot,
-                        'dates.date': {
-                            $in: room.dates.map(d => d.date)
+            // For each date in the room
+            for (const bookingDate of room.dates) {
+                const existingBooking = await BookingModel.findOne({
+                    _id: { $ne: this._id },
+                    'rooms': {
+                        $elemMatch: {
+                            'roomId': room.roomId,
+                            'timeSlot': room.timeSlot,
+                            'dates.date': bookingDate.date
                         }
-                    }
-                },
-                'status': { $in: ['pending', 'confirmed'] }
-            });
+                    },
+                    'status': { $in: ['pending', 'confirmed'] }
+                });
 
-            if (existingBooking) {
-                throw new Error(`Room ${room.name} is already booked for some of the selected dates and time slot`);
+                if (existingBooking) {
+                    throw new Error(`Room ${room.name} is already booked for ${bookingDate.date} during the ${room.timeSlot} slot`);
+                }
             }
         }
         next();
     } catch (error) {
-        next(error);
+        next(error as Error);
     }
 });
 
-export const Booking = models.Booking || model('Booking', bookingSchema);
-export default Booking; 
+// Update timestamps on save
+bookingSchema.pre('save', function(next) {
+    this.updatedAt = new Date();
+    next();
+});
+
+// Export only as a named export for consistency
+export const Booking = (mongoose.models.Booking || mongoose.model<IBooking>('Booking', bookingSchema)) as Model<IBooking>; 

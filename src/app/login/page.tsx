@@ -10,7 +10,7 @@ function LoginForm() {
     const searchParams = useSearchParams();
     const { data: session, status } = useSession();
     const [isLoading, setIsLoading] = useState(false);
-    const [showPassword, setShowPassword] = useState(true);
+    const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
         email: '',
         password: ''
@@ -44,7 +44,15 @@ function LoginForm() {
             if (result?.error) {
                 toast.dismiss(loadingToast);
                 console.error('Login error:', result.error);
-                toast.error(result.error);
+                
+                // Check if the error is due to unverified email
+                if (result.error === 'Please verify your email before logging in') {
+                    toast.error('Please verify your email before logging in');
+                    // Redirect to verification page
+                    router.push(`/verify-email?email=${encodeURIComponent(formData.email)}`);
+                } else {
+                    toast.error(result.error);
+                }
             } else {
                 toast.dismiss(loadingToast);
                 toast.success('Login successful!');

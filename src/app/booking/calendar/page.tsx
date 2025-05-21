@@ -4,25 +4,29 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useSession } from 'next-auth/react';
-import { PRICING, TimeSlot, BookingType } from '@/constants/pricing';
+import { PRICING } from '@/constants/pricing';
 import Header from '@/components/Header';
+import {
+    RoomBooking,
+    BookingData,
+    BookingType,
+    TimeSlot,
+    Room,
+    BookingStatus
+} from '@/types/booking';
+import {
+    formatDateToString,
+    parseDateString,
+    formatDisplayDate,
+    isDateInPast,
+    isWeekend,
+    getTimeSlotDetails,
+    validateBookingDates,
+    generateMonthlyBookingDates
+} from '@/utils/dateUtils';
 
-interface RoomBooking {
-    id: number;
-    name: string;
-    image: string;
-    description: string;
-    selected: boolean;
-    timeSlot: TimeSlot;
+interface StoredRoomBooking extends Omit<RoomBooking, 'dates'> {
     dates: string[];
-}
-
-interface BookingStatus {
-    date: string;
-    roomId: string;
-    type: 'none' | 'booked' | 'partial';
-    timeSlots: TimeSlot[];
-    status: 'pending' | 'confirmed' | 'cancelled';
 }
 
 interface UserData {
@@ -30,10 +34,6 @@ interface UserData {
     firstName: string;
     lastName: string;
     hasBookings: boolean;
-}
-
-interface StoredRoomBooking extends Omit<RoomBooking, 'dates'> {
-    dates: string[];
 }
 
 interface BookingResponse {
@@ -46,12 +46,12 @@ const CalendarPage: React.FC = () => {
     const router = useRouter();
     const { data: session, status } = useSession();
     const [currentMonth, setCurrentMonth] = useState(new Date());
-    const [bookingType, setBookingType] = useState<'daily' | 'monthly'>('daily');
+    const [bookingType, setBookingType] = useState<BookingType>('daily');
     const [showTimeSlots, setShowTimeSlots] = useState(false);
     const [bookingStatus, setBookingStatus] = useState<BookingStatus[]>([]);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [userData, setUserData] = useState<UserData | null>(null);
-    const [selectedRooms, setSelectedRooms] = useState<RoomBooking[]>([]);
+    const [selectedRooms, setSelectedRooms] = useState<StoredRoomBooking[]>([]);
     const [showHalfDayOptions, setShowHalfDayOptions] = useState(false);
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
 
@@ -75,7 +75,7 @@ const CalendarPage: React.FC = () => {
         try {
             const parsedRooms = JSON.parse(storedRooms);
             setSelectedRooms(parsedRooms);
-            setBookingType(storedBookingType as 'daily' | 'monthly');
+            setBookingType(storedBookingType as BookingType);
         } catch (error) {
             console.error('Error parsing stored data:', error);
             toast.error('Error loading booking data');
@@ -202,89 +202,74 @@ const CalendarPage: React.FC = () => {
         }
     };
 
-    const handleRoomSelection = (room: RoomBooking) => {
+    const handleRoomSelection = (room: Room) => {
         setSelectedRooms(prev => {
-            const isSelected = prev.some(r => r.id === room.id);
+            const isSelected = prev.some(r => r.id.toString() === room.id);
             if (isSelected) {
                 toast.error('Room deselected');
-                return prev.filter(r => r.id !== room.id);
+                return prev.filter(r => r.id.toString() !== room.id);
             } else {
                 toast.success('Room selected');
-                return [...prev, { ...room, dates: [], timeSlot: 'full' }];
+                return [...prev, {
+                    id: parseInt(room.id),
+                    roomId: room.id,
+                    name: room.name,
+                    image: room.image,
+                    description: room.description,
+                    selected: true,
+                    timeSlot: 'full',
+                    dates: []
+                }];
             }
         });
     };
 
     const handleDateSelection = (date: Date, roomId: number) => {
-        if (!date) return;
+        if (isDateInPast(date)) {
+            toast.error('Cannot select past dates');
+            return;
+        }
 
-        // Ensure consistent time by setting to noon
-        const normalizedDate = new Date(date);
-        normalizedDate.setHours(12, 0, 0, 0);
+        if (isWeekend(date)) {
+            toast.error('Weekend dates are not available');
+            return;
+        }
 
+        const dateStr = formatDateToString(date);
         const room = selectedRooms.find(r => r.id === roomId);
         if (!room) return;
 
-        // Handle monthly booking differently
+        let updatedRooms = [...selectedRooms];
+
+        // Handle monthly booking
         if (bookingType === 'monthly') {
             // Clear any existing dates for this room
-            setSelectedRooms(prev =>
-                prev.map(r => {
-                    if (r.id === roomId) {
-                        return { ...r, dates: [] };
-                    }
-                    return r;
-                })
-            );
-
-            // Generate array of dates until we get 30 available days
-            const dates: string[] = [];
-            let currentDate = new Date(normalizedDate);
-            let daysChecked = 0;
-            const maxDaysToCheck = 60; // Maximum days to look ahead to prevent infinite loop
-
-            while (dates.length < 30 && daysChecked < maxDaysToCheck) {
-                // Skip weekends
-                if (!isWeekend(currentDate)) {
-                    // Check if the slot is available
-                    if (isTimeSlotAvailable(currentDate, roomId, room.timeSlot)) {
-                        // Format date string
-                        const year = currentDate.getFullYear();
-                        const month = String(currentDate.getMonth() + 1).padStart(2, '0');
-                        const day = String(currentDate.getDate()).padStart(2, '0');
-                        dates.push(`${year}-${month}-${day}`);
-                    }
+            updatedRooms = selectedRooms.map(r => {
+                if (r.id === roomId) {
+                    return { ...r, dates: [] };
                 }
+                return r;
+            });
 
-                // Move to next day
-                currentDate.setDate(currentDate.getDate() + 1);
-                daysChecked++;
-            }
+            // Generate monthly booking dates
+            const dates = generateMonthlyBookingDates(date);
 
             if (dates.length === 0) {
                 toast.error('No available dates found starting from the selected date');
                 return;
             }
 
-            // Update selected rooms with available dates
-            setSelectedRooms(prev =>
-                prev.map(r => {
-                    if (r.id === roomId) {
-                        return { ...r, dates };
-                    }
-                    return r;
-                })
-            );
+            updatedRooms = updatedRooms.map(r => {
+                if (r.id === roomId) {
+                    return { ...r, dates };
+                }
+                return r;
+            });
+
             toast.success(`Selected ${dates.length} days starting from ${formatDisplayDate(dates[0])}`);
         } else {
-            // Daily booking logic
-            const year = normalizedDate.getFullYear();
-            const month = String(normalizedDate.getMonth() + 1).padStart(2, '0');
-            const day = String(normalizedDate.getDate()).padStart(2, '0');
-            const dateStr = `${year}-${month}-${day}`;
-
-            // Check if the slot is available
-            if (!isTimeSlotAvailable(normalizedDate, roomId, room.timeSlot)) {
+            // Handle daily booking
+            if (!isTimeSlotAvailable(date, roomId, room.timeSlot)) {
                 if (room.timeSlot === 'full') {
                     toast.error('This date is not available for full day booking');
                 } else {
@@ -293,50 +278,55 @@ const CalendarPage: React.FC = () => {
                 return;
             }
 
-            // Check if the date is already selected
             const dateIndex = room.dates?.indexOf(dateStr) ?? -1;
+            updatedRooms = selectedRooms.map(r => {
+                if (r.id === roomId) {
+                    let newDates;
+                    if (dateIndex === -1) {
+                        // Adding new date
+                        newDates = [...(r.dates || []), dateStr].sort();
+                    } else {
+                        // Removing date
+                        newDates = r.dates?.filter(d => d !== dateStr) || [];
+                    }
+                    return { ...r, dates: newDates };
+                }
+                return r;
+            });
+
             if (dateIndex === -1) {
-                // Adding new date
-                setSelectedRooms(prev =>
-                    prev.map(r => {
-                        if (r.id === roomId) {
-                            const newDates = [...(r.dates || []), dateStr];
-                            return { ...r, dates: newDates };
-                        }
-                        return r;
-                    })
-                );
                 toast.success(`Selected ${room.timeSlot} slot for ${formatDisplayDate(dateStr)}`);
             } else {
-                // Removing date
-                setSelectedRooms(prev =>
-                    prev.map(r => {
-                        if (r.id === roomId) {
-                            const newDates = r.dates?.filter(d => d !== dateStr) || [];
-                            return { ...r, dates: newDates };
-                        }
-                        return r;
-                    })
-                );
                 toast.success(`Removed ${room.timeSlot} slot for ${formatDisplayDate(dateStr)}`);
             }
         }
 
-        // Save to sessionStorage
-        sessionStorage.setItem('selectedRooms', JSON.stringify(selectedRooms));
-        sessionStorage.setItem('bookingType', bookingType);
-    };
+        setSelectedRooms(updatedRooms);
 
-    // Helper function to format display date
-    const formatDisplayDate = (dateStr: string) => {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const date = new Date(year, month - 1, day);
-        return date.toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric'
-        });
+        // Calculate total amount and save booking data
+        const totalAmount = calculateTotalAmount(updatedRooms);
+        const bookingData: BookingData = {
+            rooms: updatedRooms.map(r => ({
+                roomId: r.id.toString(),
+                name: r.name,
+                timeSlot: r.timeSlot,
+                dates: r.dates.map(date => {
+                    const { startTime, endTime } = getTimeSlotDetails(r.timeSlot);
+                    return {
+                        date,
+                        startTime,
+                        endTime
+                    };
+                })
+            })),
+            bookingType,
+            totalAmount
+        };
+
+        // Save to session storage
+        sessionStorage.setItem('selectedRooms', JSON.stringify(updatedRooms));
+        sessionStorage.setItem('bookingType', bookingType);
+        sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
     };
 
     const handleTimeSlotChange = (roomId: number, timeSlot: TimeSlot) => {
@@ -369,6 +359,13 @@ const CalendarPage: React.FC = () => {
             })
         );
 
+        // Show half-day options if half day is selected
+        if (timeSlot === 'morning' || timeSlot === 'evening') {
+            setShowHalfDayOptions(true);
+        } else {
+            setShowHalfDayOptions(false);
+        }
+
         // Save to sessionStorage
         const updatedRooms = selectedRooms.map(r => {
             if (r.id === roomId) {
@@ -383,29 +380,47 @@ const CalendarPage: React.FC = () => {
         sessionStorage.setItem('selectedRooms', JSON.stringify(updatedRooms));
 
         // Show appropriate toast message
-        const timeSlotText = timeSlot === 'full' ? 'Full Day' : timeSlot === 'morning' ? 'Morning' : 'Evening';
+        const timeSlotText = getTimeSlotText(timeSlot);
         if (incompatibleDates.length > 0) {
-            const formattedIncompatibleDates = incompatibleDates.map(date =>
-                new Date(date).toLocaleDateString('en-US', {
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric'
-                })
-            ).join(', ');
-
             toast((t) => (
                 <div>
-                    <p>Some dates were removed due to conflicts with {timeSlotText} slot:</p>
-                    <p className="text-sm mt-1 text-red-500">{formattedIncompatibleDates}</p>
+                    <p>Some dates were removed due to conflicts with {timeSlotText} slot</p>
+                    <p className="text-sm mt-1 text-yellow-500">
+                        {incompatibleDates.length} date(s) were incompatible
+                    </p>
                     {compatibleDates.length > 0 && (
-                        <p className="text-sm mt-1 text-green-500">{compatibleDates.length} compatible dates preserved</p>
+                        <p className="text-sm mt-1 text-green-500">
+                            {compatibleDates.length} compatible date(s) preserved
+                        </p>
                     )}
                 </div>
             ), { duration: 5000 });
-        } else if (compatibleDates.length > 0) {
-            toast.success(`Switched to ${timeSlotText} slot. All dates preserved.`);
         } else {
-            toast.success(`Switched to ${timeSlotText} slot.`);
+            toast.success(`Changed to ${timeSlotText}`);
+        }
+    };
+
+    const calculateTotalAmount = (rooms: RoomBooking[]) => {
+        let total = 0;
+        rooms.forEach(room => {
+            const basePrice = room.timeSlot === 'full' 
+                ? PRICING[bookingType].full 
+                : PRICING[bookingType][room.timeSlot];
+            total += basePrice * room.dates.length;
+        });
+        return total;
+    };
+
+    const getTimeSlotText = (timeSlot: TimeSlot): string => {
+        switch (timeSlot) {
+            case 'full':
+                return 'Full Day (8:00 AM - 5:00 PM)';
+            case 'morning':
+                return 'Morning (8:00 AM - 12:00 PM)';
+            case 'evening':
+                return 'Evening (1:00 PM - 5:00 PM)';
+            default:
+                return timeSlot;
         }
     };
 
@@ -417,7 +432,10 @@ const CalendarPage: React.FC = () => {
             const roomIdStr = roomId.toString();
 
             // Ensure bookingStatus is an array and contains valid entries
-            if (!Array.isArray(bookingStatus)) return true;
+            if (!Array.isArray(bookingStatus)) {
+                console.log('No booking status data available');
+                return true;
+            }
 
             const status = bookingStatus.find(b =>
                 b &&
@@ -428,10 +446,15 @@ const CalendarPage: React.FC = () => {
                 b.roomId === roomIdStr
             );
 
-            if (!status || !Array.isArray(status.timeSlots)) return true;
+            if (!status || !Array.isArray(status.timeSlots)) {
+                console.log('No booking status found for this date/room');
+                return true;
+            }
 
             // If full day is booked, no slots are available
-            if (status.timeSlots.includes('full')) return false;
+            if (status.timeSlots.includes('full')) {
+                return false;
+            }
 
             switch (timeSlot) {
                 case 'full':
@@ -439,10 +462,10 @@ const CalendarPage: React.FC = () => {
                     return !status.timeSlots.includes('morning') && !status.timeSlots.includes('evening');
                 case 'morning':
                     // For morning booking, only morning slot must be free
-                    return !status.timeSlots.includes('morning') && !status.timeSlots.includes('full');
+                    return !status.timeSlots.includes('morning');
                 case 'evening':
                     // For evening booking, only evening slot must be free
-                    return !status.timeSlots.includes('evening') && !status.timeSlots.includes('full');
+                    return !status.timeSlots.includes('evening');
                 default:
                     return false;
             }
@@ -452,37 +475,19 @@ const CalendarPage: React.FC = () => {
         }
     };
 
-    const getTimeSlotText = (slot: TimeSlot): string => {
-        switch (slot) {
-            case 'full':
-                return 'Full Day';
-            case 'morning':
-                return 'Morning';
-            case 'evening':
-                return 'Evening';
-        }
-    };
-
     const calculatePrice = () => {
         let subtotal = 0;
 
-        // Calculate subtotal based on rooms and dates
+        // Calculate price for each room
         selectedRooms.forEach(room => {
-            const numberOfDays = room.dates?.length || 0;
-            if (numberOfDays === 0) return; // Skip rooms with no dates selected
-
-            const basePrice = PRICING[bookingType][room.timeSlot];
-
-            // Add to subtotal based on booking type
-            if (bookingType === 'daily') {
-                subtotal += basePrice * numberOfDays;
-            } else {
-                subtotal += basePrice; // Monthly price is flat rate
-            }
+            const basePrice = room.timeSlot === 'full' 
+                ? PRICING[bookingType].full 
+                : PRICING[bookingType][room.timeSlot];
+            subtotal += basePrice * room.dates.length;
         });
 
-        // Calculate tax
-        const tax = subtotal * PRICING.taxRate;
+        // Calculate tax (3.5%)
+        const tax = subtotal * 0.035;
 
         // Calculate security deposit - only for unverified users
         const securityDeposit = !session?.user?.isVerified ? PRICING.securityDeposit : 0;
@@ -494,6 +499,45 @@ const CalendarPage: React.FC = () => {
             securityDeposit,
             total: subtotal + tax + securityDeposit
         };
+    };
+
+    const renderPriceBreakdown = () => {
+        const { subtotal, tax, securityDeposit, total } = calculatePrice();
+        return (
+            <div className="bg-white rounded-lg shadow-lg p-6">
+                <h3 className="text-xl font-semibold mb-4">Price Breakdown</h3>
+                <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Subtotal:</span>
+                        <span className="text-lg font-semibold">${subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Tax (3.5%):</span>
+                        <span>+ ${tax.toFixed(2)}</span>
+                    </div>
+                    {!session?.user?.isVerified && (
+                        <div className="flex justify-between items-center text-sm text-gray-600">
+                            <div className="flex-1">
+                                <span>Security Deposit</span>
+                                <span className="ml-1 text-xs text-blue-600">(Refundable)</span>
+                            </div>
+                            <span>+ ${securityDeposit.toFixed(2)}</span>
+                        </div>
+                    )}
+                    <div className="pt-2 mt-2 border-t border-gray-200">
+                        <div className="flex justify-between items-center">
+                            <span className="text-gray-600">Total:</span>
+                            <span className="text-blue-600">${total.toFixed(2)}</span>
+                        </div>
+                        {!session?.user?.isVerified && (
+                            <p className="text-xs text-gray-500 mt-1">
+                                *A refundable security deposit of $250 will be charged as this is your first booking
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     const handleRemoveRoom = (roomId: number) => {
@@ -574,24 +618,34 @@ const CalendarPage: React.FC = () => {
                 date: dateStr,
                 roomId: roomIdStr,
                 timeSlot,
-                bookingStatus: bookingStatus
+                bookingStatus
             });
 
+            // Find the booking status for this date and room
             const status = bookingStatus.find(b =>
                 b.date === dateStr &&
-                b.roomId === roomIdStr &&
-                b.status === 'confirmed' // Only consider confirmed bookings
+                b.roomId === roomIdStr
             );
 
-            if (!status || !Array.isArray(status.timeSlots)) return false;
+            if (!status || !Array.isArray(status.timeSlots)) {
+                console.log('No booking status found for this date/room');
+                return false;
+            }
+
+            console.log('Found booking status:', status);
 
             // For full day booking, check if full day is booked
             if (timeSlot === 'full') {
-                return status.timeSlots.includes('full');
+                const isBooked = status.timeSlots.includes('full') || 
+                               (status.timeSlots.includes('morning') && status.timeSlots.includes('evening'));
+                console.log('Full day booking check:', isBooked);
+                return isBooked;
             }
 
             // For half-day bookings, check if either full day is booked or the specific slot
-            return status.timeSlots.includes('full') || status.timeSlots.includes(timeSlot);
+            const isBooked = status.timeSlots.includes('full') || status.timeSlots.includes(timeSlot);
+            console.log(`${timeSlot} booking check:`, isBooked);
+            return isBooked;
         } catch (error) {
             console.error('Error checking if date is booked:', error);
             return false;
@@ -599,60 +653,52 @@ const CalendarPage: React.FC = () => {
     };
 
     const getDateClassName = (date: Date | null, room: RoomBooking) => {
-        if (!date) return 'bg-gray-100 text-gray-400 cursor-not-allowed';
+        if (!date) return 'bg-gray-100';
+        
+        const baseClasses = 'w-full h-full flex items-center justify-center rounded-lg transition-colors';
+        const isSelected = room.dates.includes(date.toISOString().split('T')[0]);
+        const isBooked = isDateBooked(date, room.id, room.timeSlot);
+        const isPast = isDateInPast(date);
+        const isWeekendDay = isWeekend(date);
 
-        const dateStr = date.toISOString().split('T')[0];
-        const isSelected = room.dates?.includes(dateStr);
+        let className = '';
 
-        if (isWeekend(date)) {
-            return 'bg-gray-100 text-gray-400 cursor-not-allowed';
+        // First check if date is in past or weekend
+        if (isPast || isWeekendDay) {
+            className = 'bg-gray-100 text-gray-400 cursor-not-allowed';
         }
-
-        // Get booking status for this date and room
-        const status = bookingStatus.find(b =>
-            b.date === dateStr &&
-            b.roomId === room.id.toString() &&
-            b.status === 'confirmed' // Only consider confirmed bookings
-        );
-
-        // If the date is selected
-        if (isSelected) {
-            // For selected dates, show different styles based on time slot
+        // Then check if date is booked
+        else if (isBooked) {
             if (room.timeSlot === 'morning') {
-                return 'bg-gradient-to-b from-blue-500 to-white';
+                className = 'bg-gradient-to-b from-red-100 via-red-100 to-white cursor-not-allowed';
             } else if (room.timeSlot === 'evening') {
-                return 'bg-gradient-to-t from-blue-500 to-white';
+                className = 'bg-gradient-to-t from-red-100 via-red-100 to-white cursor-not-allowed';
             } else {
-                return 'bg-blue-500 text-white hover:bg-blue-600';
+                className = 'bg-red-100 text-red-800 cursor-not-allowed hover:bg-red-100';
+            }
+        }
+        // Then check if date is selected
+        else if (isSelected) {
+            if (room.timeSlot === 'morning') {
+                className = 'bg-gradient-to-b from-blue-500 via-blue-500 to-white text-white';
+            } else if (room.timeSlot === 'evening') {
+                className = 'bg-gradient-to-t from-blue-500 via-blue-500 to-white text-white';
+            } else {
+                className = 'bg-blue-500 text-white hover:bg-blue-600';
+            }
+        }
+        // Finally, style available dates
+        else {
+            if (room.timeSlot === 'morning') {
+                className = 'cursor-pointer hover:bg-gradient-to-b hover:from-blue-100 hover:via-blue-100 hover:to-white';
+            } else if (room.timeSlot === 'evening') {
+                className = 'cursor-pointer hover:bg-gradient-to-t hover:from-blue-100 hover:via-blue-100 hover:to-white';
+            } else {
+                className = 'cursor-pointer hover:bg-blue-100';
             }
         }
 
-        // Check for different booking scenarios
-        if (status && Array.isArray(status.timeSlots) && status.timeSlots.length > 0) {
-            console.log('Rendering booked status for:', {
-                date: dateStr,
-                roomId: room.id,
-                timeSlots: status.timeSlots
-            });
-
-            // If fully booked
-            if (status.timeSlots.includes('full')) {
-                return 'bg-red-100 text-red-600 cursor-not-allowed';
-            }
-
-            // If morning is booked
-            if (status.timeSlots.includes('morning')) {
-                return 'bg-gradient-to-b from-red-100 to-white text-gray-600 cursor-not-allowed';
-            }
-
-            // If evening is booked
-            if (status.timeSlots.includes('evening')) {
-                return 'bg-gradient-to-t from-red-100 to-white text-gray-600 cursor-not-allowed';
-            }
-        }
-
-        // Available dates
-        return 'bg-white hover:bg-blue-50 cursor-pointer';
+        return className;
     };
 
     const handleProceed = async () => {
@@ -664,7 +710,6 @@ const CalendarPage: React.FC = () => {
 
         // Filter rooms that have dates selected
         const roomsWithDates = selectedRooms.filter(room => room.dates && room.dates.length > 0);
-        const roomsWithoutDates = selectedRooms.filter(room => !room.dates || room.dates.length === 0);
 
         // Check if at least one room has dates
         if (roomsWithDates.length === 0) {
@@ -673,73 +718,42 @@ const CalendarPage: React.FC = () => {
         }
 
         try {
-            // Calculate time slots based on room.timeSlot
-            const getTimeSlot = (timeSlot: TimeSlot) => {
-                switch (timeSlot) {
-                    case 'morning':
-                        return { startTime: '08:00', endTime: '13:00' };
-                    case 'evening':
-                        return { startTime: '14:00', endTime: '19:00' };
-                    case 'full':
-                    default:
-                        return { startTime: '08:00', endTime: '19:00' };
-                }
-            };
-
-            // Validate and format dates before storing
-            const validateAndFormatDate = (dateStr: string): string => {
-                try {
-                    const [year, month, day] = dateStr.split('-').map(Number);
-                    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
-                        throw new Error('Invalid date components');
-                    }
-                    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                } catch (error) {
-                    console.error('Error formatting date:', error);
-                    throw new Error(`Invalid date format: ${dateStr}`);
-                }
-            };
-
-            // Only include rooms that have dates selected in the booking data
-            const bookingData = {
-                rooms: roomsWithDates.map(room => {
-                    const timeSlotHours = getTimeSlot(room.timeSlot);
-                    return {
-                        id: room.id,
-                        name: `Room ${room.id}`,
-                        timeSlot: room.timeSlot,
-                        dates: room.dates.map(date => validateAndFormatDate(date))
-                    };
-                }),
-                bookingType,
-                totalAmount: calculatePrice().total,
-                status: 'pending',
-                paymentStatus: 'pending'
-            };
-
-            // Store in sessionStorage
-            sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
-            sessionStorage.removeItem('selectedRooms');
-            sessionStorage.removeItem('bookingType');
-
-            // Show warning if some rooms don't have dates
-            if (roomsWithoutDates.length > 0) {
-                toast(`${roomsWithoutDates.length} room(s) without dates will not be included in the booking`, {
-                    duration: 4000,
-                    icon: '⚠️',
-                    style: {
-                        background: '#fff7ed',
-                        color: '#9a3412',
-                        border: '1px solid #fdba74'
-                    }
-                });
+            // Validate dates for each room
+            const hasInvalidDates = roomsWithDates.some(room => !validateBookingDates(room.dates));
+            if (hasInvalidDates) {
+                toast.error('Some selected dates are invalid. Please check your selection.');
+                return;
             }
 
-            toast.success('Proceeding to booking summary...');
+            // Format booking data
+            const bookingData: BookingData = {
+                rooms: roomsWithDates.map(room => ({
+                    roomId: room.id.toString(),
+                    name: room.name,
+                    timeSlot: room.timeSlot,
+                    dates: room.dates.map(date => {
+                        const { startTime, endTime } = getTimeSlotDetails(room.timeSlot);
+                        return {
+                            date,
+                            startTime,
+                            endTime
+                        };
+                    })
+                })),
+                bookingType,
+                totalAmount: calculateTotalAmount(roomsWithDates),
+                isVerified: session.user.isVerified
+            };
+
+            // Store booking data in session storage
+            sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
+            sessionStorage.setItem('bookingType', bookingType);
+
+            // Navigate to summary page
             router.push('/booking/summary');
         } catch (error) {
-            console.error('Error preparing booking data:', error);
-            toast.error('Failed to prepare booking data');
+            console.error('Error processing booking:', error);
+            toast.error('Failed to process booking. Please try again.');
         }
     };
 
@@ -1016,7 +1030,8 @@ const CalendarPage: React.FC = () => {
                                             {getDaysInMonth(currentMonth).map((date, index) => {
                                                 const isBooked = date && isDateBooked(date, room.id, room.timeSlot);
                                                 const isWeekendDay = date && isWeekend(date);
-                                                const canSelect = date && !isWeekendDay && !isBooked;
+                                                const isPastDay = date && isDateInPast(date);
+                                                const canSelect = date && !isWeekendDay && !isBooked && !isPastDay;
 
                                                 return (
                                                     <button
@@ -1026,9 +1041,10 @@ const CalendarPage: React.FC = () => {
                                                         className={`aspect-square p-2 rounded-lg text-center transition-all duration-200 ${getDateClassName(date, room)}`}
                                                         title={
                                                             !date ? "" :
-                                                                isWeekendDay ? "Weekend is not available" :
-                                                                    isBooked ? `This time slot (${room.timeSlot}) is already booked` :
-                                                                        ""
+                                                            isWeekendDay ? "Weekend is not available" :
+                                                            isPastDay ? "Past dates cannot be selected" :
+                                                            isBooked ? `This time slot (${room.timeSlot}) is already booked` :
+                                                            ""
                                                         }
                                                     >
                                                         {date?.getDate()}
@@ -1146,7 +1162,7 @@ const CalendarPage: React.FC = () => {
                                         )}
                                         <div className="flex justify-between items-center text-sm">
                                             <span>Subtotal:</span>
-                                            <span>${calculatePrice().subtotal.toFixed(2)}</span>
+                                            <span>${calculateTotalAmount(selectedRooms).toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between items-center text-sm text-gray-600">
                                             <span>Tax (3.5%):</span>
@@ -1189,10 +1205,11 @@ const CalendarPage: React.FC = () => {
                                         <button
                                             onClick={handleProceed}
                                             disabled={!selectedRooms.some(room => room.dates?.length > 0)}
-                                            className={`w-full py-3 px-4 rounded-lg text-white font-medium ${!selectedRooms.some(room => room.dates?.length > 0)
-                                                ? 'bg-gray-300 cursor-not-allowed'
-                                                : 'bg-blue-600 hover:bg-blue-700 transition-colors duration-200'
-                                                }`}
+                                            className={`w-full py-3 px-4 rounded-lg text-white font-medium ${
+                                                !selectedRooms.some(room => room.dates?.length > 0)
+                                                    ? 'bg-gray-300 cursor-not-allowed'
+                                                    : 'bg-blue-600 hover:bg-blue-700 transition-colors duration-200'
+                                            }`}
                                         >
                                             {selectedRooms.length === 0
                                                 ? 'Select a Room to Proceed'
@@ -1223,96 +1240,3 @@ const CalendarPage: React.FC = () => {
 };
 
 export default CalendarPage;
-
-
-
-
-
-
-
-
-
-// 
-// klkjdghjkhjkrhgrkg
-
-//  line 111
-// const handleDateSelection = (date: Date, roomId: number) => {
-//     if (bookingType === 'monthly') {
-//         // For monthly bookings, select all dates in the month
-//         const year = date.getFullYear();
-//         const month = date.getMonth();
-//         const daysInMonth = new Date(year, month + 1, 0).getDate();
-//         const dates = Array.from({ length: daysInMonth }, (_, i) => {
-//             const newDate = new Date(year, month, i + 1);
-//             return newDate.toISOString().split('T')[0];
-//         }).filter(dateStr => {
-//             const d = new Date(dateStr);
-//             return !isWeekend(d) && !isDateBooked(d);
-//         });
-
-//         setSelectedRooms(prev =>
-//             prev.map(room =>
-//                 room.id === roomId
-//                     ? { ...room, dates: dates }
-//                     : room
-//             )
-//         );
-
-//         if (dates.length > 0) {
-//             toast.success(`Selected ${dates.length} available dates`);
-//         }
-//     } else {
-//         setSelectedRooms(prev =>
-//             prev.map(room => {
-//                 if (room.id === roomId) {
-//                     const dateStr = date.toISOString().split('T')[0];
-//                     const dateIndex = room.dates?.indexOf(dateStr) ?? -1;
-//                     let newDates = room.dates || [];
-
-//                     if (dateIndex === -1) {
-//                         newDates = [...newDates, dateStr];
-//                     } else {
-//                         newDates = newDates.filter(d => d !== dateStr);
-//                     }
-
-//                     return { ...room, dates: newDates };
-//                 }
-//                 return room;
-//             })
-//         );
-//     }
-
-//     // Save to localStorage
-//     localStorage.setItem('selectedRooms', JSON.stringify(selectedRooms));
-//     localStorage.setItem('bookingType', bookingType);
-// };
-
-
-
-//  line 281   
-
-// const getDateClassName = (date: Date | null, room: RoomBooking) => {
-//     if (!date) return 'bg-gray-100 text-gray-400 cursor-not-allowed';
-
-//     const dateStr = date.toISOString().split('T')[0];
-//     const isSelected = room.dates?.includes(dateStr);
-
-//     if (isWeekend(date)) {
-//         return 'bg-gray-100 text-gray-400 cursor-not-allowed';
-//     }
-
-//     if (isDateBooked(date)) {
-//         return 'bg-red-100 text-red-600 cursor-not-allowed';
-//     }
-
-//     if (isSelected) {
-//         return 'bg-blue-500 text-white hover:bg-blue-600';
-//     }
-
-//     return 'bg-white hover:bg-blue-50 cursor-pointer';
-// };
-
-
-
-
-

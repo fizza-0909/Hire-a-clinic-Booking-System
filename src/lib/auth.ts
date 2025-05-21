@@ -1,12 +1,11 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { MongoDBAdapter } from "@auth/mongodb-adapter";
 import clientPromise from "./mongodb";
-import { compare } from "bcryptjs";
 import User from "@/models/User";
 import dbConnect from "./mongoose";
+import bcrypt from 'bcryptjs';
 
-// Extend the default session type
+// Extend the built-in session types
 declare module "next-auth" {
     interface Session {
         user: {
@@ -15,12 +14,24 @@ declare module "next-auth" {
             name: string;
             firstName: string;
             lastName: string;
+            role: string;
             isVerified: boolean;
+            isEmailVerified: boolean;
         }
+    }
+
+    interface User {
+        id: string;
+        email: string;
+        name: string;
+        firstName: string;
+        lastName: string;
+        role: string;
+        isVerified: boolean;
+        isEmailVerified: boolean;
     }
 }
 
-// Extend the default JWT token type
 declare module "next-auth/jwt" {
     interface JWT {
         id: string;
@@ -28,7 +39,9 @@ declare module "next-auth/jwt" {
         name: string;
         firstName: string;
         lastName: string;
+        role: string;
         isVerified: boolean;
+        isEmailVerified: boolean;
     }
 }
 
@@ -37,87 +50,6 @@ if (!process.env.NEXTAUTH_SECRET) {
 }
 
 export const authOptions: NextAuthOptions = {
-    adapter: MongoDBAdapter(clientPromise),
-    secret: process.env.NEXTAUTH_SECRET,
-    session: {
-        strategy: "jwt",
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-        updateAge: 24 * 60 * 60, // 24 hours
-    },
-    pages: {
-        signIn: "/login",
-        error: "/login",
-    },
-    callbacks: {
-        async jwt({ token, user, trigger, session }) {
-            if (user) {
-                // Initial sign in
-                token.id = user.id;
-                token.email = user.email;
-                token.name = user.name;
-                token.firstName = user.firstName;
-                token.lastName = user.lastName;
-                token.isVerified = user.isVerified;
-            }
-
-            // Handle updates to the session
-            if (trigger === "update") {
-                // Get fresh user data
-                await dbConnect();
-                const freshUser = await User.findById(token.id).lean();
-                if (freshUser) {
-                    console.log('Updating JWT with fresh user data:', {
-                        userId: freshUser._id,
-                        isVerified: freshUser.isVerified
-                    });
-
-                    return {
-                        ...token,
-                        isVerified: freshUser.isVerified,
-                        name: `${freshUser.firstName} ${freshUser.lastName}`,
-                        firstName: freshUser.firstName,
-                        lastName: freshUser.lastName,
-                        email: freshUser.email
-                    };
-                }
-            }
-
-            return token;
-        },
-        async session({ session, token }) {
-            if (token) {
-                // Get fresh user data for every session
-                await dbConnect();
-                const freshUser = await User.findById(token.id).lean();
-
-                if (freshUser) {
-                    console.log('Updating session with fresh user data:', {
-                        userId: freshUser._id,
-                        isVerified: freshUser.isVerified
-                    });
-
-                    session.user = {
-                        id: freshUser._id.toString(),
-                        email: freshUser.email,
-                        name: `${freshUser.firstName} ${freshUser.lastName}`,
-                        firstName: freshUser.firstName,
-                        lastName: freshUser.lastName,
-                        isVerified: freshUser.isVerified
-                    };
-                } else {
-                    session.user = {
-                        id: token.id,
-                        email: token.email,
-                        name: token.name,
-                        firstName: token.firstName,
-                        lastName: token.lastName,
-                        isVerified: token.isVerified
-                    };
-                }
-            }
-            return session;
-        }
-    },
     providers: [
         CredentialsProvider({
             name: "Credentials",
@@ -126,51 +58,89 @@ export const authOptions: NextAuthOptions = {
                 password: { label: "Password", type: "password" }
             },
             async authorize(credentials) {
-                try {
-                    console.log('Starting authorization process...');
-                    await dbConnect();
-
-                    if (!credentials?.email || !credentials?.password) {
-                        console.log('Missing credentials');
-                        throw new Error("Please enter both email and password");
-                    }
-
-                    console.log('Looking up user:', credentials.email);
-                    const user = await User.findOne({
-                        email: credentials.email.toLowerCase().trim()
-                    }).select('+password');
-
-                    if (!user) {
-                        console.log('User not found');
-                        throw new Error("Invalid email or password");
-                    }
-
-                    console.log('Comparing passwords...');
-                    const isValid = await compare(
-                        credentials.password,
-                        user.password
-                    );
-
-                    if (!isValid) {
-                        console.log('Invalid password');
-                        throw new Error("Invalid email or password");
-                    }
-
-                    console.log('Authorization successful');
-                    return {
-                        id: user._id.toString(),
-                        email: user.email,
-                        firstName: user.firstName,
-                        lastName: user.lastName,
-                        name: `${user.firstName} ${user.lastName}`,
-                        isVerified: user.isVerified
-                    };
-                } catch (error) {
-                    console.error('Authorization error:', error);
-                    throw error;
+                if (!credentials?.email || !credentials?.password) {
+                    throw new Error('Please enter your email and password');
                 }
+
+                await dbConnect();
+
+                const user = await User.findOne({ email: credentials.email }).select('+password');
+                if (!user) {
+                    throw new Error('No user found with this email');
+                }
+
+                const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
+                if (!isPasswordValid) {
+                    throw new Error('Invalid password');
+                }
+
+                return {
+                    id: user._id.toString(),
+                    email: user.email,
+                    name: `${user.firstName} ${user.lastName}`,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    role: user.role || 'user',
+                    isVerified: user.isVerified || false,
+                    isEmailVerified: user.isEmailVerified || false
+                };
             }
         })
     ],
+    callbacks: {
+        async jwt({ token, user, trigger }) {
+            if (user) {
+                // Initial sign in
+                token.id = user.id;
+                token.email = user.email;
+                token.name = user.name;
+                token.firstName = user.firstName;
+                token.lastName = user.lastName;
+                token.role = user.role;
+                token.isVerified = user.isVerified;
+                token.isEmailVerified = user.isEmailVerified;
+            }
+            
+            // Always refresh user data on each request
+            try {
+                await dbConnect();
+                const freshUser = await User.findById(token.id).lean();
+                if (freshUser) {
+                    token.isVerified = freshUser.isVerified;
+                    token.isEmailVerified = freshUser.isEmailVerified;
+                    console.log('Updated user verification status in token:', {
+                        isVerified: freshUser.isVerified,
+                        isEmailVerified: freshUser.isEmailVerified
+                    });
+                }
+            } catch (error) {
+                console.error('Error refreshing user data:', error);
+            }
+            
+            return token;
+        },
+        async session({ session, token }) {
+            session.user = {
+                id: token.id,
+                email: token.email,
+                name: token.name,
+                firstName: token.firstName,
+                lastName: token.lastName,
+                role: token.role,
+                isVerified: token.isVerified,
+                isEmailVerified: token.isEmailVerified
+            };
+            return session;
+        }
+    },
+    pages: {
+        signIn: "/login",
+        error: "/login",
+    },
+    session: {
+        strategy: "jwt",
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+    },
+    secret: process.env.NEXTAUTH_SECRET,
     debug: process.env.NODE_ENV === 'development'
 }; 

@@ -1,385 +1,168 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import Header from '@/components/Header';
-import jsPDF from 'jspdf';
-import { useSession } from 'next-auth/react';
+import { formatDate } from '@/lib/utils';
+import { generateBookingPDF } from '@/utils/pdfGenerator';
+
+interface BookingDate {
+    date: string;
+    startTime: string;
+    endTime: string;
+}
+
+interface BookingRoom {
+    roomId: string;
+    name: string;
+    timeSlot: 'full' | 'morning' | 'evening';
+    dates: BookingDate[];
+}
 
 interface BookingDetails {
-    rooms: Array<{
-        id: number;
-        name: string;
-        timeSlot: 'full' | 'morning' | 'evening';
+    _id: string;
+    rooms: BookingRoom[];
+    status: string;
+    paymentStatus: string;
+    totalAmount: number;
+    createdAt: string;
+    paymentDetails?: {
+        amount: number;
+        securityDeposit?: number;
+    };
+}
+
+interface ConfirmationResponse {
+    message: string;
+    bookings: BookingDetails[];
+    paymentStatus: string;
+}
+
+const formatTimeSlot = (timeSlot: string): string => {
+    switch (timeSlot) {
+        case 'full':
+            return '8:00 AM - 5:00 PM';
+        case 'morning':
+            return '8:00 AM - 12:00 PM';
+        case 'evening':
+            return '1:00 PM - 5:00 PM';
+        default:
+            return timeSlot.charAt(0).toUpperCase() + timeSlot.slice(1);
+    }
+};
+
+const getTimeSlotStyle = (timeSlot: string): string => {
+    switch (timeSlot) {
+        case 'full':
+            return 'bg-blue-600';
+        case 'morning':
+            return 'bg-green-600';
+        case 'evening':
+            return 'bg-purple-600';
+        default:
+            return 'bg-gray-600';
+    }
+};
+
+interface BookingConfirmation {
+    customerName: string;
+    email: string;
+    bookingNumber: string;
+    bookingType: string;
+    bookingDate: string;
+    roomDetails: Array<{
+        roomNumber: string;
+        timeSlot: string;
         dates: string[];
     }>;
-    totalAmount?: number;
-    bookingType: 'daily' | 'monthly';
-    bookingDate?: string;
-    priceBreakdown: {
+    paymentDetails: {
         subtotal: number;
         tax: number;
         securityDeposit: number;
-        total: number;
+        totalAmount: number;
     };
 }
 
-interface PaymentError {
-    message: string;
-    code?: string;
-    decline_code?: string;
-}
-
-const PRICING = {
-    daily: {
-        full: 300,
-        half: 160
-    },
-    monthly: {
-        full: 2000,
-        half: 1000
-    }
-}
-
-const ConfirmationPage = () => {
+const BookingConfirmationPage = () => {
     const router = useRouter();
     const { data: session } = useSession();
-    const [isLoading, setIsLoading] = useState(true);
-    const [paymentError, setPaymentError] = useState<PaymentError | null>(null);
-    const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(null);
-    const [isDownloading, setIsDownloading] = useState(false);
-    const [showAnimation, setShowAnimation] = useState(true);
-
-    // Define user information with optional chaining for phoneNumber
-    const userName = session?.user ? `${session.user.firstName} ${session.user.lastName}` : 'N/A';
-    const userEmail = session?.user?.email || 'N/A';
-    const userPhone = (session?.user as any)?.phoneNumber || 'N/A';  // Type assertion since phoneNumber is optional
+    const [bookingDetails, setBookingDetails] = useState<BookingConfirmation | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const verifyPaymentAndBooking = async () => {
+        const fetchBookingDetails = async () => {
             try {
-                // Get stored payment intent and booking data
-                const paymentIntentData = sessionStorage.getItem('paymentIntent');
-                const bookingData = sessionStorage.getItem('bookingData');
+                const bookingDataStr = sessionStorage.getItem('bookingData');
+                const paymentIntentStr = sessionStorage.getItem('paymentIntent');
 
-                if (!paymentIntentData || !bookingData) {
-                    throw new Error('No payment or booking data found');
+                if (!bookingDataStr || !paymentIntentStr) {
+                    throw new Error('Booking data not found');
                 }
 
-                const { clientSecret } = JSON.parse(paymentIntentData);
-                const parsedBookingData = JSON.parse(bookingData);
+                const bookingData = JSON.parse(bookingDataStr);
+                const paymentIntent = JSON.parse(paymentIntentStr);
 
-                setIsLoading(true);
+                // Format the booking details
+                const confirmation: BookingConfirmation = {
+                    customerName: `${session?.user?.firstName} ${session?.user?.lastName}`,
+                    email: session?.user?.email || '',
+                    bookingNumber: `BK${Date.now().toString().slice(-6)}`,
+                    bookingType: bookingData.bookingType,
+                    bookingDate: new Date().toLocaleDateString(),
+                    roomDetails: bookingData.rooms.map((room: any) => ({
+                        roomNumber: room.roomId,
+                        timeSlot: room.timeSlot === 'morning' ? '8:00 AM - 12:00 PM' :
+                                 room.timeSlot === 'evening' ? '1:00 PM - 5:00 PM' :
+                                 '8:00 AM - 5:00 PM',
+                        dates: room.dates.map((date: any) => 
+                            new Date(date.date || date).toLocaleDateString('en-US', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                            })
+                        )
+                    })),
+                    paymentDetails: {
+                        subtotal: bookingData.totalAmount - (bookingData.tax || 0) - (bookingData.securityDeposit || 0),
+                        tax: bookingData.tax || 0,
+                        securityDeposit: bookingData.securityDeposit || 0,
+                        totalAmount: bookingData.totalAmount
+                    }
+                };
 
-                // Verify payment status
-                const response = await fetch('/api/payment/verify', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ clientSecret }),
-                });
-
-                const paymentStatus = await response.json();
-
-                if (!response.ok) {
-                    setPaymentError({
-                        message: paymentStatus.error || 'Failed to verify payment'
-                    });
-                    setBookingDetails(null);
-                    return;
-                }
-
-                if (paymentStatus.success) {
-                    // Payment succeeded
-                    setBookingDetails(parsedBookingData);
-                    setPaymentError(null);
-
-                    // Clear payment data from session storage
-                    sessionStorage.removeItem('paymentIntent');
-                    sessionStorage.removeItem('bookingData');
-                } else {
-                    // Payment failed or is incomplete
-                    setPaymentError({
-                        message: paymentStatus.message || 'Payment was not completed successfully',
-                        code: paymentStatus.code,
-                        decline_code: paymentStatus.decline_code
-                    });
-                    setBookingDetails(null);
-
-                    // Update booking status to failed
-                    await fetch('/api/bookings/update-status', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            bookingIds: parsedBookingData.bookingIds,
-                            status: 'failed',
-                            paymentError: {
-                                message: paymentStatus.message,
-                                code: paymentStatus.code,
-                                decline_code: paymentStatus.decline_code
-                            }
-                        }),
-                    });
-                }
+                setBookingDetails(confirmation);
+                setLoading(false);
             } catch (error) {
-                console.error('Error verifying payment:', error);
-                setPaymentError({
-                    message: error instanceof Error ? error.message : 'An unknown error occurred'
-                });
-                setBookingDetails(null);
-            } finally {
-                setIsLoading(false);
-                setShowAnimation(false);
+                console.error('Error fetching booking details:', error);
+                toast.error('Failed to load booking details');
+                router.push('/booking');
             }
         };
 
-        verifyPaymentAndBooking();
-    }, [router]);
+        fetchBookingDetails();
+    }, [session, router]);
 
-    const formatDate = (dateStr: string) => {
-        return new Date(dateStr).toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric'
-        });
-    };
-
-    const getTimeSlotText = (timeSlot: 'full' | 'morning' | 'evening') => {
-        switch (timeSlot) {
-            case 'full':
-                return '8:00 AM - 5:00 PM';
-            case 'morning':
-                return '8:00 AM - 12:00 PM';
-            case 'evening':
-                return '1:00 PM - 5:00 PM';
-        }
-    };
-
-    const generatePDF = (booking: BookingDetails): jsPDF => {
-        const pdf = new jsPDF();
-        const pageWidth = pdf.internal.pageSize.width;
-        const margin = 20;
-        let yPos = 0;
-
-        // Colors
-        const primaryBlue = [37, 99, 235] as [number, number, number];
-        const softBlue = [240, 247, 255] as [number, number, number];
-        const textGray = [33, 33, 33] as [number, number, number];
-
-        // --- Header Section ---
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.setFontSize(22);
-        pdf.setFont("helvetica", "bold");
-        const titleText = "HIRE A CLINIC";
-        const titleWidth = pdf.getTextWidth(titleText);
-        pdf.text(titleText, (pageWidth - titleWidth) / 2, 20);
-
-        pdf.setFontSize(14);
-        pdf.setFont("helvetica", "normal");
-        const subtitleText = "Booking Confirmation";
-        const subtitleWidth = pdf.getTextWidth(subtitleText);
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text(subtitleText, (pageWidth - subtitleWidth) / 2, 30);
-
-        // Divider Line
-        pdf.setDrawColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, 35, pageWidth - margin, 35);
-
-        yPos = 45;
-
-        // --- Customer Details Section ---
-        pdf.setFontSize(12);
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Customer Details", margin, yPos);
-        yPos += 8;
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text(`Name: ${userName}`, margin, yPos + 8);
-        pdf.text(`Email: ${userEmail}`, margin, yPos + 16);
-        pdf.text(`Phone: ${userPhone || 'N/A'}`, margin, yPos + 24);
-        pdf.text(`Booking Number: MAO${Date.now().toString(36).toUpperCase().slice(0, 5)}`, margin, yPos + 32);
-
-        yPos += 50;
-
-        // --- Booking Summary Section ---
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Booking Summary", margin, yPos);
-        yPos += 8;
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text(`Booking Type: Daily`, margin, yPos + 8);
-        pdf.text(`Booking Date: ${formatDate(new Date().toISOString())}`, margin, yPos + 16);
-
-        yPos += 34;
-
-        // --- Room Details Section ---
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Room Details", margin, yPos);
-        yPos += 8;
-
-        bookingDetails?.rooms.forEach((room) => {
-            pdf.setFont("helvetica", "normal");
-            pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-            pdf.text(`Room ${room.name}`, margin, yPos + 8);
-            pdf.text(`Time Slot: ${getTimeSlotText(room.timeSlot)}`, margin, yPos + 16);
-            pdf.text(`Dates: ${room.dates.map(date => formatDate(date)).join(', ')}`, margin, yPos + 24);
-            yPos += 32;
-        });
-
-        // --- Payment Details Section ---
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Payment Details", margin, yPos);
-        yPos += 8;
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-        pdf.text(`Subtotal: $${bookingDetails?.priceBreakdown.subtotal.toFixed(2)}`, margin, yPos + 8);
-        pdf.text(`Tax: $${bookingDetails?.priceBreakdown.tax.toFixed(2)}`, margin, yPos + 16);
-        pdf.text(`Security Deposit (Refundable): $${bookingDetails?.priceBreakdown.securityDeposit.toFixed(2)}`, margin, yPos + 24);
-        pdf.setFont("helvetica", "bold");
-        pdf.text(`Total Amount: $${bookingDetails?.priceBreakdown.total.toFixed(2)}`, margin, yPos + 36);
-
-        yPos += 50;
-
-        // Check if we need a new page for Terms and Conditions
-        if (yPos > pdf.internal.pageSize.height - 100) {
-            pdf.addPage();
-            yPos = 20;
-        }
-
-        // --- Terms and Conditions Section ---
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-        pdf.text("Terms and Conditions", margin, yPos);
-        yPos += 12;
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(10);
-        pdf.setTextColor(textGray[0], textGray[1], textGray[2]);
-
-        const terms = [
-            "• Payments are non-refundable. Only the security deposit is refundable as per policy.",
-            "• Renters are responsible for the equipment and space during their booked time slot.",
-            "• Clinic owners must maintain a safe and professional environment.",
-            "• Renters must respect booking times. If a renter arrives late, extra time will not be provided or compensated.",
-            "• Any damages or misuse of the clinic will be deducted from the security deposit.",
-            "• All users must follow platform policies regarding cancellations and conduct."
-        ];
-
-        terms.forEach((term) => {
-            if (yPos > pdf.internal.pageSize.height - 20) {
-                pdf.addPage();
-                yPos = 20;
-            }
-            const lines = pdf.splitTextToSize(term, pageWidth - (margin * 2));
-            pdf.text(lines, margin, yPos);
-            yPos += (lines.length * 6) + 6;
-        });
-
-        return pdf;
-    };
-
-    const handleDownload = () => {
+    const handleDownloadPDF = () => {
         if (!bookingDetails) return;
-        setIsDownloading(true);
 
         try {
-            const pdf = generatePDF(bookingDetails);
-            pdf.save(`booking-confirmation-${new Date().getTime()}.pdf`);
-            toast.success('Booking confirmation downloaded successfully');
+            const doc = generateBookingPDF(bookingDetails);
+            doc.save(`booking-confirmation-${bookingDetails.bookingNumber}.pdf`);
         } catch (error) {
-            console.error('Download failed:', error);
-            toast.error('Failed to download booking confirmation');
-        } finally {
-            setIsDownloading(false);
+            console.error('Error generating PDF:', error);
+            toast.error('Failed to generate PDF');
         }
     };
 
-    const getDisplayAmount = (details: BookingDetails | null): string => {
-        if (!details) return '0.00';
-
-        // Try the direct total amount first
-        if (details.totalAmount) {
-            return details.totalAmount.toFixed(2);
-        }
-
-        // Fall back to price breakdown total if available
-        if (details.priceBreakdown?.total) {
-            return details.priceBreakdown.total.toFixed(2);
-        }
-
-        // Calculate from price breakdown components if available
-        if (details.priceBreakdown) {
-            const { subtotal = 0, tax = 0, securityDeposit = 0 } = details.priceBreakdown;
-            return (subtotal + tax + securityDeposit).toFixed(2);
-        }
-
-        // Default fallback
-        return '0.00';
-    };
-
-    if (isLoading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-        );
-    }
-
-    if (paymentError) {
+    if (loading) {
         return (
             <div className="min-h-screen bg-gray-50">
                 <Header />
-                <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-                    <div className="bg-white shadow sm:rounded-lg p-6 max-w-3xl mx-auto">
-                        <div className="text-center">
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Failed</h1>
-                            <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-4">
-                                <h3 className="text-sm font-medium text-red-800 mb-2">Error Details</h3>
-                                <p className="text-sm text-red-700">{paymentError.message}</p>
-                                {paymentError.code && (
-                                    <p className="text-sm text-red-700 mt-1">Error Code: {paymentError.code}</p>
-                                )}
-                            </div>
-                            <div className="mt-6">
-                                <button
-                                    onClick={() => router.push('/booking')}
-                                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                >
-                                    Try Booking Again
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </main>
-            </div>
-        );
-    }
-
-    if (!bookingDetails) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                    <h1 className="text-2xl font-bold text-gray-800 mb-4">No Booking Found</h1>
-                    <p className="text-gray-600 mb-6">We couldn't find your booking confirmation.</p>
-                    <button
-                        onClick={() => router.push('/booking')}
-                        className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                    >
-                        Make a New Booking
-                    </button>
+                <div className="flex items-center justify-center min-h-screen">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
                 </div>
             </div>
         );
@@ -388,131 +171,97 @@ const ConfirmationPage = () => {
     return (
         <div className="min-h-screen bg-gray-50">
             <Header />
-            <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-                <div className="bg-white shadow sm:rounded-lg p-6 max-w-3xl mx-auto">
+            <main className="container mx-auto px-4 py-8">
+                <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-8">
                     <div className="text-center mb-8">
-                        <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
-                            <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                        </div>
-                        <h1 className="text-3xl font-bold text-gray-900">Booking Confirmed!</h1>
-                        <p className="mt-2 text-sm text-gray-600">
-                            Your payment has been processed successfully and your booking is confirmed.
-                        </p>
+                        <h1 className="text-3xl font-bold text-gray-800 mb-2">Booking Confirmed!</h1>
+                        <p className="text-gray-600">Thank you for your booking. Your confirmation details are below.</p>
                     </div>
-                    <div className="space-y-8">
-                        {/* Customer Details Section */}
-                        <section className="bg-white rounded-lg shadow p-6">
-                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Customer Details</h3>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <p className="text-sm text-gray-600">Name</p>
-                                    <p className="font-medium">{userName}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-600">Email</p>
-                                    <p className="font-medium">{userEmail}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-600">Phone</p>
-                                    <p className="font-medium">{userPhone || 'N/A'}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-600">Booking Number</p>
-                                    <p className="font-medium">{'MAO' + Date.now().toString(36).toUpperCase().slice(0, 5)}</p>
-                                </div>
-                            </div>
-                        </section>
 
-                        {/* Booking Summary Section */}
-                        <section className="bg-white rounded-lg shadow p-6">
-                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Booking Summary</h3>
-                            <div className="space-y-4">
-                                <div>
-                                    <p className="text-sm text-gray-600">Booking Type</p>
-                                    <p className="font-medium capitalize">{bookingDetails.bookingType}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-600">Booking Date</p>
-                                    <p className="font-medium">{formatDate(new Date().toISOString())}</p>
-                                </div>
+                    <div className="mb-8">
+                        <h2 className="text-xl font-semibold mb-4">Customer Details</h2>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <p className="text-gray-600">Name</p>
+                                <p className="font-medium">{bookingDetails?.customerName}</p>
                             </div>
-                        </section>
+                            <div>
+                                <p className="text-gray-600">Email</p>
+                                <p className="font-medium">{bookingDetails?.email}</p>
+                            </div>
+                            <div>
+                                <p className="text-gray-600">Booking Number</p>
+                                <p className="font-medium">{bookingDetails?.bookingNumber}</p>
+                            </div>
+                            <div>
+                                <p className="text-gray-600">Booking Type</p>
+                                <p className="font-medium capitalize">{bookingDetails?.bookingType}</p>
+                            </div>
+                        </div>
+                    </div>
 
-                        {/* Room Details Section */}
-                        <section className="bg-white rounded-lg shadow p-6">
-                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Room Details</h3>
-                            <div className="space-y-4">
-                                {bookingDetails.rooms.map((room, index) => (
-                                    <div key={index} className="border-b pb-4 last:border-b-0">
-                                        <p className="font-medium">Room {room.name}</p>
-                                        <p className="text-sm text-gray-600">Time Slot: {getTimeSlotText(room.timeSlot)}</p>
-                                        <p className="text-sm text-gray-600">
-                                            Dates: {room.dates.map(date => formatDate(date)).join(', ')}
-                                        </p>
+                    <div className="mb-8">
+                        <h2 className="text-xl font-semibold mb-4">Room Details</h2>
+                        {bookingDetails?.roomDetails.map((room, index) => (
+                            <div key={index} className="mb-6 p-4 bg-gray-50 rounded-lg">
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <p className="text-gray-600">Room Number</p>
+                                        <p className="font-medium">{room.roomNumber}</p>
                                     </div>
-                                ))}
+                                    <div>
+                                        <p className="text-gray-600">Time Slot</p>
+                                        <p className="font-medium">{room.timeSlot}</p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-gray-600 mb-2">Dates</p>
+                                    <ul className="list-disc list-inside">
+                                        {room.dates.map((date, dateIndex) => (
+                                            <li key={dateIndex} className="text-gray-800">{date}</li>
+                                        ))}
+                                    </ul>
+                                </div>
                             </div>
-                        </section>
+                        ))}
+                    </div>
 
-                        {/* Payment Details Section */}
-                        <section className="bg-white rounded-lg shadow p-6">
-                            <h3 className="text-lg font-semibold text-blue-600 mb-4">Payment Details</h3>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-600">Subtotal</span>
-                                    <span>${bookingDetails.priceBreakdown.subtotal.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-600">Tax</span>
-                                    <span>${bookingDetails.priceBreakdown.tax.toFixed(2)}</span>
-                                </div>
+                    <div className="mb-8">
+                        <h2 className="text-xl font-semibold mb-4">Payment Details</h2>
+                        <div className="space-y-2">
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Subtotal</span>
+                                <span className="font-medium">${bookingDetails?.paymentDetails.subtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Tax (3.5%)</span>
+                                <span className="font-medium">${bookingDetails?.paymentDetails.tax.toFixed(2)}</span>
+                            </div>
+                            {bookingDetails?.paymentDetails.securityDeposit > 0 && (
                                 <div className="flex justify-between">
                                     <span className="text-gray-600">Security Deposit (Refundable)</span>
-                                    <span>${bookingDetails.priceBreakdown.securityDeposit.toFixed(2)}</span>
+                                    <span className="font-medium">${bookingDetails?.paymentDetails.securityDeposit.toFixed(2)}</span>
                                 </div>
-                                <div className="flex justify-between font-semibold text-lg pt-2 border-t">
+                            )}
+                            <div className="border-t pt-2 mt-2">
+                                <div className="flex justify-between font-semibold">
                                     <span>Total Amount</span>
-                                    <span>${bookingDetails.priceBreakdown.total.toFixed(2)}</span>
+                                    <span className="text-blue-600">${bookingDetails?.paymentDetails.totalAmount.toFixed(2)}</span>
                                 </div>
                             </div>
-                        </section>
-
-                        {/* Download and Navigation Buttons */}
-                        <div className="flex justify-center gap-4 pt-4">
-                            <button
-                                onClick={handleDownload}
-                                disabled={isDownloading}
-                                className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 text-lg font-semibold flex items-center"
-                            >
-                                {isDownloading ? (
-                                    <>
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Generating PDF...
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
-                                        Download Confirmation
-                                    </>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => router.push('/')}
-                                className="bg-gray-100 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-200 transition-colors text-lg font-semibold flex items-center"
-                            >
-                                <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                                </svg>
-                                Back to Main Page
-                            </button>
                         </div>
+                    </div>
+
+                    <div className="flex justify-center mt-8">
+                        <button
+                            onClick={handleDownloadPDF}
+                            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                        >
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Download Confirmation PDF
+                        </button>
                     </div>
                 </div>
             </main>
@@ -520,4 +269,4 @@ const ConfirmationPage = () => {
     );
 };
 
-export default ConfirmationPage; 
+export default BookingConfirmationPage; 
