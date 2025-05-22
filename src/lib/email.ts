@@ -6,6 +6,37 @@ interface EmailConfig {
     html: string;
 }
 
+// Validate required environment variables
+const requiredEnvVars = [
+    'EMAIL_SERVER_HOST',
+    'EMAIL_SERVER_PORT',
+    'EMAIL_SERVER_USER',
+    'EMAIL_SERVER_PASSWORD',
+    'EMAIL_FROM'
+];
+
+// Check if we're in production
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Log missing environment variables in development
+if (!isProduction) {
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    if (missingVars.length > 0) {
+        console.warn('Missing email environment variables:', missingVars.join(', '));
+    }
+}
+
+// Log email configuration (without sensitive data)
+console.log('Email Configuration:', {
+    host: process.env.EMAIL_SERVER_HOST ? '***' : 'MISSING',
+    port: process.env.EMAIL_SERVER_PORT ? '***' : 'MISSING',
+    user: process.env.EMAIL_SERVER_USER ? '***' : 'MISSING',
+    from: process.env.EMAIL_FROM ? '***' : 'MISSING',
+    appUrl: process.env.NEXT_PUBLIC_APP_URL ? '***' : 'MISSING',
+    nodeEnv: process.env.NODE_ENV || 'development'
+});
+
+// Create transporter with retry logic
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVER_HOST,
     port: Number(process.env.EMAIL_SERVER_PORT),
@@ -13,20 +44,111 @@ const transporter = nodemailer.createTransport({
         user: process.env.EMAIL_SERVER_USER,
         pass: process.env.EMAIL_SERVER_PASSWORD
     },
-    secure: true
+    secure: true, // Use TLS
+    connectionTimeout: 10000, // 10 seconds
+    tls: {
+        // Don't fail on invalid certs in development
+        rejectUnauthorized: isProduction
+    },
+    // Add debug logging
+    logger: true,
+    debug: !isProduction,
+    // Better handling of connection issues
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 5
 });
 
-export const sendEmail = async (config: EmailConfig) => {
+// Verify connection configuration with better error handling
+const verifyTransporter = async () => {
     try {
-        await transporter.sendMail({
-            from: process.env.EMAIL_FROM,
-            ...config
-        });
-        return { success: true };
+        console.log('Verifying SMTP connection...');
+        const success = await transporter.verify();
+        console.log('SMTP Server is ready to send emails');
+        return success;
     } catch (error) {
-        console.error('Error sending email:', error);
-        return { success: false, error };
+        console.error('SMTP Connection Error:', {
+            name: error instanceof Error ? error.name : 'Unknown',
+            message: error instanceof Error ? error.message : 'Unknown error',
+            code: error instanceof Error ? (error as any).code : 'NO_CODE',
+            stack: error instanceof Error ? error.stack : undefined
+        });
+        throw error;
     }
+};
+
+// Verify on startup
+if (process.env.NODE_ENV !== 'test') {
+    verifyTransporter().catch(console.error);
+}
+
+export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ success: boolean; error?: string; details?: any }> => {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= retryCount; attempt++) {
+        try {
+            console.log(`Sending email attempt ${attempt}/${retryCount} to ${config.to}`);
+            
+            const mailOptions = {
+                from: `"Hire a Clinic" <${process.env.EMAIL_FROM}>`,
+                to: config.to,
+                subject: config.subject,
+                html: config.html,
+                // Add headers for better email deliverability
+                headers: {
+                    'X-Priority': '1',
+                    'X-MSMail-Priority': 'High',
+                    'Importance': 'high'
+                }
+            };
+
+            console.log('Sending email with options:', {
+                ...mailOptions,
+                from: '***',
+                to: '***',
+                html: '***',
+                subject: mailOptions.subject
+            });
+
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Email sent successfully:', info.messageId);
+            
+            console.log(`Email sent successfully to ${config.to}`);
+            return { success: true };
+            
+        } catch (error) {
+            lastError = error;
+            console.error(`Attempt ${attempt} failed:`, error);
+            
+            // If it's the last attempt, don't wait
+            if (attempt < retryCount) {
+                // Exponential backoff: 1s, 2s, 4s, etc.
+                const delayMs = Math.pow(2, attempt - 1) * 1000;
+                console.log(`Retrying in ${delayMs}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+    }
+    
+    // If we get here, all attempts failed
+    console.error(`Failed to send email after ${retryCount} attempts`, lastError);
+    const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error';
+    console.error('Failed to send email after all retries:', {
+        error: errorMessage,
+        to: config.to,
+        subject: config.subject,
+        details: lastError instanceof Error ? {
+            name: lastError.name,
+            code: (lastError as any).code,
+            stack: lastError.stack
+        } : lastError
+    });
+    
+    return { 
+        success: false, 
+        error: errorMessage,
+        details: lastError
+    };
 };
 
 export const getBookingConfirmationEmail = (booking: {
@@ -229,61 +351,57 @@ export async function sendVerificationEmail(
     to: string,
     token: string,
     code: string
-) {
+): Promise<{ success: boolean; error?: string }> {
     console.log('Attempting to send verification email to:', to);
 
-    if (!process.env.EMAIL_SERVER_HOST || 
-        !process.env.EMAIL_SERVER_PORT || 
-        !process.env.EMAIL_SERVER_USER || 
-        !process.env.EMAIL_SERVER_PASSWORD ||
-        !process.env.EMAIL_FROM) {
-        console.error('Missing email configuration:', {
-            host: !!process.env.EMAIL_SERVER_HOST,
-            port: !!process.env.EMAIL_SERVER_PORT,
-            user: !!process.env.EMAIL_SERVER_USER,
-            pass: !!process.env.EMAIL_SERVER_PASSWORD,
-            from: !!process.env.EMAIL_FROM
-        });
-        throw new Error('Email configuration is incomplete');
+    // Validate required environment variables
+    const requiredVars = {
+        EMAIL_SERVER_HOST: process.env.EMAIL_SERVER_HOST,
+        EMAIL_SERVER_PORT: process.env.EMAIL_SERVER_PORT,
+        EMAIL_SERVER_USER: process.env.EMAIL_SERVER_USER,
+        EMAIL_SERVER_PASSWORD: process.env.EMAIL_SERVER_PASSWORD,
+        EMAIL_FROM: process.env.EMAIL_FROM,
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL
+    };
+
+    const missingVars = Object.entries(requiredVars)
+        .filter(([_, value]) => !value)
+        .map(([key]) => key);
+
+    if (missingVars.length > 0) {
+        const errorMsg = `Missing required environment variables: ${missingVars.join(', ')}`;
+        console.error(errorMsg);
+        return { success: false, error: errorMsg };
     }
 
-    const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
-    
     try {
-        await sendEmail({
+        const verificationUrl = `${requiredVars.NEXT_PUBLIC_APP_URL}/verify-email?token=${encodeURIComponent(token)}`;
+        
+        const emailContent = {
             to,
-            subject: 'Verify Your Email - Hire a Clinic',
+            subject: 'Verify Your Email Address',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h1 style="color: #3b82f6; text-align: center;">Verify Your Email</h1>
-                    <p>Thank you for registering with Hire a Clinic. To complete your registration, please verify your email address.</p>
+                    <p>Thank you for registering with Hire a Clinic. Please verify your email address by entering the following code:</p>
                     
-                    <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <h2 style="color: #1f2937; margin-top: 0;">Verification Options</h2>
-                        
-                        <div style="margin-bottom: 20px;">
-                            <p><strong>Option 1:</strong> Click the button below to verify your email:</p>
-                            <a href="${verificationLink}" 
-                               style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 24px; 
-                                      text-decoration: none; border-radius: 6px; margin: 10px 0;">
-                                Verify Email
-                            </a>
-                        </div>
-                        
-                        <div>
-                            <p><strong>Option 2:</strong> Go to the verification page and enter this code:</p>
-                            <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/verify-email?email=${encodeURIComponent(to)}" style="color: #3b82f6; text-decoration: none;">Click here to go to verification page</a></p>
-                            <div style="background-color: white; padding: 15px; border-radius: 4px; text-align: center; 
-                                      font-size: 24px; letter-spacing: 4px; font-family: monospace;">
-                                ${code}
-                            </div>
+                    <div style="background-color: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+                        <div style="font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #1f2937;">
+                            ${code}
                         </div>
                     </div>
                     
-                    <p style="color: #6b7280; font-size: 14px;">
-                        This verification code will expire in 24 hours. If you did not create an account with Hire a Clinic, 
-                        please ignore this email.
-                    </p>
+                    <p>Or click the button below to verify your email:</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${verificationUrl}" 
+                           style="display: inline-block; background-color: #3b82f6; color: white; 
+                                  padding: 12px 24px; text-decoration: none; border-radius: 6px; 
+                                  font-weight: bold;">
+                            Verify Email Address
+                        </a>
+                    </div>
+                    
+                    <p>If you didn't create an account, you can safely ignore this email.</p>
                     
                     <div style="text-align: center; margin-top: 30px; color: #6b7280;">
                         <p>Hire a Clinic</p>
@@ -291,19 +409,18 @@ export async function sendVerificationEmail(
                     </div>
                 </div>
             `
-        });
-        
-        console.log('Verification email sent successfully');
-        return true;
-    } catch (error) {
-        console.error('Failed to send verification email:', error);
-        if (error instanceof Error) {
-            console.error('Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
+        };
+
+        const result = await sendEmail(emailContent);
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to send verification email');
         }
-        throw error;
+        
+        return { success: true };
+        
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Failed to send verification email';
+        console.error('Error in sendVerificationEmail:', errorMsg);
+        return { success: false, error: errorMsg };
     }
-} 
+}

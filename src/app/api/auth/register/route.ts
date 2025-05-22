@@ -68,23 +68,36 @@ export async function POST(req: Request) {
         user.verificationCode = verificationCode;
         await user.save();
 
-        // Send verification email
-        try {
-            console.log('Attempting to send verification email to:', user.email);
-            await sendVerificationEmail(
-                user.email,
-                verificationToken,
-                verificationCode
-            );
+        // Send verification email with detailed logging
+        console.log('Preparing to send verification email to:', user.email);
+        const emailResult = await sendVerificationEmail(
+            user.email,
+            verificationToken,
+            verificationCode
+        ) as { success: boolean; error?: string; details?: any };
+
+        if (!emailResult.success) {
+            const errorDetails = {
+                email: user.email,
+                error: emailResult.error,
+                details: emailResult.details,
+                timestamp: new Date().toISOString(),
+                environment: process.env.NODE_ENV || 'development',
+                vercel: process.env.VERCEL ? 'yes' : 'no',
+                region: process.env.VERCEL_REGION || 'local'
+            };
+            
+            console.error('Failed to send verification email:', errorDetails);
+            
+            // In production, you might want to:
+            // 1. Queue the email for retry
+            // 2. Notify admins about the failure
+            // 3. Log to an error tracking service
+            
+            // For now, we'll just log it and continue with registration
+            console.warn('User registered but verification email failed to send. Verification code:', verificationCode);
+        } else {
             console.log('Verification email sent successfully to:', user.email);
-        } catch (emailError) {
-            console.error('Failed to send verification email:', emailError);
-            console.error('Error details:', {
-                name: emailError instanceof Error ? emailError.name : 'Unknown',
-                message: emailError instanceof Error ? emailError.message : String(emailError),
-                stack: emailError instanceof Error ? emailError.stack : undefined
-            });
-            // Don't fail registration if email fails, but log it
         }
 
         // Remove sensitive data from response
