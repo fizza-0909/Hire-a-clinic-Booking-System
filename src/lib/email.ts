@@ -84,8 +84,18 @@ if (process.env.NODE_ENV !== 'test') {
 
 export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ success: boolean; error?: string; details?: any }> => {
     let lastError;
+    const startTime = Date.now();
+    
+    // Helper function to create timeout promise
+    const withTimeout = (promise: Promise<any>, ms: number) => {
+        const timeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Email sending timed out after ${ms}ms`)), ms)
+        );
+        return Promise.race([promise, timeout]);
+    };
     
     for (let attempt = 1; attempt <= retryCount; attempt++) {
+        const attemptStartTime = Date.now();
         try {
             console.log(`Sending email attempt ${attempt}/${retryCount} to ${config.to}`);
             
@@ -98,11 +108,13 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
                 headers: {
                     'X-Priority': '1',
                     'X-MSMail-Priority': 'High',
-                    'Importance': 'high'
+                    'Importance': 'high',
+                    'X-Attempt-Number': attempt.toString(),
+                    'X-Total-Attempts': retryCount.toString()
                 }
             };
 
-            console.log('Sending email with options:', {
+            console.log(`[${new Date().toISOString()}] Sending email with options:`, {
                 ...mailOptions,
                 from: '***',
                 to: '***',
@@ -110,11 +122,28 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
                 subject: mailOptions.subject
             });
 
-            const info = await transporter.sendMail(mailOptions);
-            console.log('Email sent successfully:', info.messageId);
+            // Add a 10-second timeout for each attempt
+            const info = await withTimeout(transporter.sendMail(mailOptions), 10000);
+            const attemptDuration = Date.now() - attemptStartTime;
+            const totalDuration = Date.now() - startTime;
             
-            console.log(`Email sent successfully to ${config.to}`);
-            return { success: true };
+            console.log(`[${new Date().toISOString()}] Email sent successfully in ${attemptDuration}ms (total ${totalDuration}ms):`, {
+                messageId: info.messageId,
+                accepted: info.accepted,
+                rejected: info.rejected,
+                pending: info.pending,
+                response: info.response
+            });
+            
+            return { 
+                success: true,
+                details: {
+                    messageId: info.messageId,
+                    attemptDuration,
+                    totalDuration,
+                    attemptNumber: attempt
+                }
+            };
             
         } catch (error) {
             lastError = error;
