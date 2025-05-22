@@ -236,15 +236,13 @@ export async function sendVerificationEmail(
         !process.env.EMAIL_SERVER_PORT || 
         !process.env.EMAIL_SERVER_USER || 
         !process.env.EMAIL_SERVER_PASSWORD ||
-        !process.env.EMAIL_FROM ||
-        !process.env.NEXT_PUBLIC_APP_URL) {
+        !process.env.EMAIL_FROM) {
         console.error('Missing email configuration:', {
             host: !!process.env.EMAIL_SERVER_HOST,
             port: !!process.env.EMAIL_SERVER_PORT,
             user: !!process.env.EMAIL_SERVER_USER,
             pass: !!process.env.EMAIL_SERVER_PASSWORD,
-            from: !!process.env.EMAIL_FROM,
-            appUrl: !!process.env.NEXT_PUBLIC_APP_URL
+            from: !!process.env.EMAIL_FROM
         });
         throw new Error('Email configuration is incomplete');
     }

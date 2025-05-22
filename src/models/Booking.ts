@@ -94,10 +94,21 @@ const bookingSchema = new mongoose.Schema({
     },
     paymentStatus: {
         type: String,
-        enum: ['pending', 'completed', 'failed'],
-        default: 'pending'
+        enum: ['succeeded', 'rejected'],
+        required: true
     },
-    paymentIntentId: String,
+    paymentDetails: {
+        status: {
+            type: String,
+            enum: ['succeeded', 'rejected'],
+            required: true
+        },
+        confirmedAt: Date,
+        paymentIntentId: String,
+        amount: Number,
+        currency: String,
+        paymentMethodType: String
+    },
     createdAt: {
         type: Date,
         default: Date.now
@@ -116,16 +127,23 @@ bookingSchema.pre('save', async function(next) {
         for (const room of this.rooms) {
             // For each date in the room
             for (const bookingDate of room.dates) {
+                // Check if the room is already booked for this date and time slot
+                // Only block if there's a confirmed booking with successful payment
                 const existingBooking = await BookingModel.findOne({
-                    _id: { $ne: this._id },
-                    'rooms': {
+                    'rooms.roomId': room.roomId,
+                    'rooms.dates': {
                         $elemMatch: {
-                            'roomId': room.roomId,
-                            'timeSlot': room.timeSlot,
-                            'dates.date': bookingDate.date
+                            date: bookingDate.date,
+                            $or: [
+                                { timeSlot: 'full' },
+                                { timeSlot: room.timeSlot }
+                            ]
                         }
                     },
-                    'status': { $in: ['pending', 'confirmed'] }
+                    $or: [
+                        { status: 'confirmed', paymentStatus: 'succeeded' },
+                        { paymentDetails: { status: 'succeeded' } }
+                    ]
                 });
 
                 if (existingBooking) {

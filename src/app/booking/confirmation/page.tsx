@@ -126,10 +126,10 @@ const BookingConfirmationPage = () => {
                         )
                     })),
                     paymentDetails: {
-                        subtotal: bookingData.totalAmount - (bookingData.tax || 0) - (bookingData.securityDeposit || 0),
-                        tax: bookingData.tax || 0,
-                        securityDeposit: bookingData.securityDeposit || 0,
-                        totalAmount: bookingData.totalAmount
+                        subtotal: bookingData.totalAmount,
+                        tax: bookingData.totalAmount * 0.035, // 3.5% tax
+                        securityDeposit: !session?.user?.isVerified ? 250 : 0,
+                        totalAmount: bookingData.totalAmount + (bookingData.totalAmount * 0.035) + (!session?.user?.isVerified ? 250 : 0)
                     }
                 };
 
@@ -237,7 +237,7 @@ const BookingConfirmationPage = () => {
                                 <span className="text-gray-600">Tax (3.5%)</span>
                                 <span className="font-medium">${bookingDetails?.paymentDetails.tax.toFixed(2)}</span>
                             </div>
-                            {bookingDetails?.paymentDetails.securityDeposit > 0 && (
+                            {(bookingDetails?.paymentDetails?.securityDeposit ?? 0) > 0 && (
                                 <div className="flex justify-between">
                                     <span className="text-gray-600">Security Deposit (Refundable)</span>
                                     <span className="font-medium">${bookingDetails?.paymentDetails.securityDeposit.toFixed(2)}</span>

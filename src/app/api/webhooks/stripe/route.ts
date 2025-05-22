@@ -120,15 +120,16 @@ export async function POST(req: Request) {
                     }, { status: 200 });
                 }
 
+                // When payment succeeds, immediately update booking status
                 const result = await db.collection('bookings').updateMany(
                     {
-                        _id: { $in: bookingIdArray },
-                        'paymentDetails.status': { $ne: 'succeeded' }
+                        _id: { $in: bookingIdArray }
                     },
                     {
                         $set: {
                             status: 'confirmed',
                             paymentStatus: 'succeeded',
+                            totalAmount: paymentIntent.amount / 100, // Convert from cents to dollars
                             paymentDetails: {
                                 status: 'succeeded',
                                 confirmedAt: new Date(),
@@ -180,16 +181,21 @@ export async function POST(req: Request) {
             await logToFile(`Processing failed bookings: ${bookingIds}`);
 
             try {
+                // When payment fails, mark as rejected
                 const result = await db.collection('bookings').updateMany(
                     {
                         _id: { $in: bookingIdArray }
                     },
                     {
                         $set: {
-                            status: 'failed',
-                            'paymentDetails.status': 'failed',
-                            'paymentDetails.failedAt': new Date(),
-                            'paymentDetails.failureMessage': paymentIntent.last_payment_error?.message,
+                            status: 'cancelled',
+                            paymentStatus: 'rejected',
+                            paymentDetails: {
+                                status: 'rejected',
+                                failedAt: new Date(),
+                                failureMessage: paymentIntent.last_payment_error?.message,
+                                paymentIntentId: paymentIntent.id
+                            },
                             updatedAt: new Date()
                         }
                     }

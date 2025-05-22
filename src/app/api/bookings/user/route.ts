@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongoose';
-import Booking from '@/models/Booking';
+import { Booking } from '@/models/Booking';
 
 export async function GET() {
     try {
@@ -19,18 +19,22 @@ export async function GET() {
             .lean(); // Use lean() for better performance
 
         // Map the bookings to include all necessary fields
-        const formattedBookings = bookings.map(booking => ({
+        const formattedBookings = bookings.map((booking: any) => ({
             _id: booking._id.toString(),
-            roomId: booking.roomId,
-            timeSlot: booking.timeSlot,
-            dates: booking.dates,
+            rooms: booking.rooms.map((room: any) => ({
+                roomId: room.roomId,
+                name: room.name,
+                timeSlot: room.timeSlot,
+                dates: room.dates
+            })),
             status: booking.status,
             paymentStatus: booking.paymentStatus,
-            totalAmount: booking.paymentDetails?.amount || 0,
+            totalAmount: booking.totalAmount,
             createdAt: booking.createdAt,
-            paymentDetails: {
-                amount: booking.paymentDetails?.amount || 0,
-                securityDeposit: booking.paymentDetails?.securityDeposit || 0
+            paymentDetails: booking.paymentDetails || {
+                amount: booking.totalAmount,
+                status: booking.paymentStatus,
+                confirmedAt: booking.status === 'confirmed' ? booking.updatedAt : null
             }
         }));
 

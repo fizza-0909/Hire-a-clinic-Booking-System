@@ -8,7 +8,7 @@ import { sendEmail, getBookingConfirmationEmail } from '@/lib/email';
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-    apiVersion: '2023-10-16'
+    apiVersion: '2025-04-30.basil' as const
 });
 
 export async function POST(req: Request) {
@@ -43,7 +43,8 @@ export async function POST(req: Request) {
         const bookingIds = paymentIntent.metadata.bookingIds?.split(',') || [];
         console.log('Looking for bookings:', bookingIds);
 
-        if (paymentIntent.status === 'succeeded') {
+        // Check both succeeded and processing status
+        if (paymentIntent.status === 'succeeded' || paymentIntent.status === 'processing') {
             // Update all associated bookings to confirmed
             const updateResult = await Booking.updateMany(
                 {
@@ -57,7 +58,8 @@ export async function POST(req: Request) {
                         paymentDetails: {
                             status: 'succeeded',
                             confirmedAt: new Date(),
-                            amount: paymentIntent.amount,
+                            paymentIntentId: paymentIntent.id,
+                            amount: paymentIntent.amount / 100, // Convert cents to dollars
                             currency: paymentIntent.currency,
                             paymentMethodType: paymentIntent.payment_method_types?.[0] || 'card'
                         },
@@ -72,7 +74,7 @@ export async function POST(req: Request) {
             });
 
             // Get updated bookings
-            const bookings = await Booking.find({ _id: { $in: bookingIds } });
+            const bookings = await Booking.find({ _id: { $in: bookingIds } }).lean();
             console.log(`Found ${bookings.length} bookings to process`);
 
             if (bookings.length === 0) {
@@ -106,10 +108,18 @@ export async function POST(req: Request) {
                     for (const booking of bookings) {
                         const { subject, html } = getBookingConfirmationEmail({
                             customerName: `${user.firstName} ${user.lastName}`,
-                            bookingId: booking._id,
-                            bookingType: booking.bookingType,
-                            totalAmount: booking.totalAmount,
-                            rooms: booking.rooms
+                            bookingNumber: booking._id.toString(),
+                            roomDetails: booking.rooms.map(room => ({
+                                roomNumber: room.roomId,
+                                timeSlot: room.timeSlot,
+                                dates: room.dates.map(d => d.date)
+                            })),
+                            paymentDetails: {
+                                subtotal: booking.totalAmount,
+                                tax: booking.totalAmount * 0.035,
+                                securityDeposit: !user.isVerified ? 250 : 0,
+                                totalAmount: booking.totalAmount + (booking.totalAmount * 0.035) + (!user.isVerified ? 250 : 0)
+                            }
                         });
 
                         await sendEmail({

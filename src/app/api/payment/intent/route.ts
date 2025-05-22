@@ -27,7 +27,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-    apiVersion: '2025-04-30.basil'
+    apiVersion: '2023-10-16' as Stripe.LatestApiVersion
 });
 
 // Helper function to validate date string
@@ -150,6 +150,12 @@ export async function POST(req: Request) {
         }
 
         // Create pending bookings
+        const baseAmount = amount / 100; // Convert to dollars
+        const securityDeposit = requiresSecurityDeposit ? 250 : 0; // Fixed $250 security deposit
+        const totalBeforeTax = baseAmount + securityDeposit;
+        const tax = totalBeforeTax * 0.035; // 3.5% tax
+        const totalAmount = totalBeforeTax + tax;
+
         const bookingPromises = bookingData.rooms.map(room => 
             Booking.create({
                 userId: session.user.id,
@@ -161,19 +167,26 @@ export async function POST(req: Request) {
                 }],
                 bookingType: bookingData.bookingType,
                 status: 'pending',
-                paymentStatus: 'pending',
-                totalAmount: amount / 100, // Store in dollars
+                paymentStatus: 'rejected',  // Start as rejected until payment succeeds
+                totalAmount: totalAmount,  // Add total amount
+                paymentDetails: {
+                    status: 'rejected',  // Start as rejected until payment succeeds
+                    amount: baseAmount,
+                    tax: tax,
+                    securityDeposit: securityDeposit,
+                    paymentIntentId: null  // Will be set when payment is processed
+                },
                 createdAt: new Date(),
                 updatedAt: new Date()
             })
         );
 
         const bookings = await Promise.all(bookingPromises);
-        const bookingIds = bookings.map(booking => booking._id.toString());
+        const bookingIds = bookings.map(booking => (booking as any)._id.toString());
 
         // Create Stripe payment intent
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: amount,
+            amount: Math.round(totalAmount * 100), // Convert back to cents for Stripe
             currency: 'usd',
             customer: stripeCustomerId,
             automatic_payment_methods: {
@@ -184,7 +197,10 @@ export async function POST(req: Request) {
                 bookingIds: bookingIds.join(','),
                 bookingType: bookingData.bookingType,
                 roomCount: bookingData.rooms.length.toString(),
-                includesSecurityDeposit: requiresSecurityDeposit ? 'true' : 'false'
+                baseAmount: baseAmount.toString(),
+                tax: tax.toString(),
+                securityDeposit: securityDeposit.toString(),
+                totalAmount: totalAmount.toString()
             }
         });
 

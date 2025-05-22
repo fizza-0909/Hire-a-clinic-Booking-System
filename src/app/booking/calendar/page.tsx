@@ -406,7 +406,12 @@ const CalendarPage: React.FC = () => {
             const basePrice = room.timeSlot === 'full' 
                 ? PRICING[bookingType].full 
                 : PRICING[bookingType][room.timeSlot];
-            total += basePrice * room.dates.length;
+            // For monthly bookings, use flat rate. For daily, multiply by days
+            if (bookingType === 'monthly') {
+                total += basePrice; // Flat monthly rate
+            } else {
+                total += basePrice * room.dates.length; // Daily rate * number of days
+            }
         });
         return total;
     };
@@ -483,7 +488,13 @@ const CalendarPage: React.FC = () => {
             const basePrice = room.timeSlot === 'full' 
                 ? PRICING[bookingType].full 
                 : PRICING[bookingType][room.timeSlot];
-            subtotal += basePrice * room.dates.length;
+            
+            // For monthly bookings, use flat rate. For daily, multiply by days
+            if (bookingType === 'monthly') {
+                subtotal += basePrice; // Flat monthly rate
+            } else {
+                subtotal += basePrice * room.dates.length; // Daily rate * number of days
+            }
         });
 
         // Calculate tax (3.5%)
