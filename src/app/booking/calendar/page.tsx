@@ -519,7 +519,6 @@ const CalendarPage: React.FC = () => {
                         <div className="flex justify-between items-center text-sm text-gray-600">
                             <div className="flex-1">
                                 <span>Security Deposit</span>
-                                <span className="ml-1 text-xs text-blue-600">(Refundable)</span>
                             </div>
                             <span>+ ${securityDeposit.toFixed(2)}</span>
                         </div>

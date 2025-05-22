@@ -71,15 +71,18 @@ export const generateBookingPDF = (booking: BookingDetails) => {
         doc.text(`Total Amount: $${booking.paymentDetails.totalAmount.toFixed(2)}`, 20, yPos + 30);
     }
 
-    // Terms and Conditions
-    yPos = doc.internal.pageSize.height - 80;
-    doc.setFontSize(14);
-    doc.text('Terms and Conditions', 20, yPos);
-    doc.setFontSize(10);
-    doc.text('• Payments are non-refundable. Only the security deposit is refundable as per policy.', 20, yPos + 10);
-    doc.text('• Renters are responsible for the equipment and space during their booked time slot.', 20, yPos + 20);
-    doc.text('• Clinic owners must maintain a safe and professional environment.', 20, yPos + 30);
-    doc.text('• Renters must respect booking times.', 20, yPos + 40);
+
+
+    // Add a new page for Terms and Conditions
+doc.addPage();
+
+doc.setFontSize(14);
+doc.text('Terms and Conditions', 20, 30);
+doc.setFontSize(10);
+doc.text('• Payments are non-refundable. Only the security deposit is refundable as per policy.', 20, 40);
+doc.text('• Renters are responsible for the equipment and space during their booked time slot.', 20, 50);
+doc.text('• Clinic owners must maintain a safe and professional environment.', 20, 60);
+doc.text('• Renters must respect booking times.', 20, 70);
 
     return doc;
 }; 
