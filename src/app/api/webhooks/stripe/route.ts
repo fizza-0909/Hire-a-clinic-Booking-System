@@ -155,14 +155,21 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
 
     try {
         const bookingIdsRaw = paymentIntent.metadata.bookingIds;
+        const userId = paymentIntent.metadata.userId;
         if (!bookingIdsRaw) {
             console.error('No bookingIds found in payment intent metadata');
             return;
         }
+        const { db } = await connectToDatabase();
 
+        if(userId){
+            const user = await db.collection('users').findOne({_id:new ObjectId(userId)});
+            if(user){
+                await db.collection('users').updateOne({_id:new ObjectId(userId)},{$set:{isVerified:true}});
+            }
+        }
         const bookingIds = bookingIdsRaw.split(',').map(id => new ObjectId(id.trim()));
 
-        const { db } = await connectToDatabase();
         const result = await db.collection('bookings').updateMany(
             { _id: { $in: bookingIds } },
             {
