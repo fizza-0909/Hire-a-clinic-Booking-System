@@ -78,6 +78,9 @@ export async function POST(req: Request) {
 
         // Handle the event
         switch (event.type) {
+            case 'charge.succeeded':
+                await handleChargeSucceeded(event.data.object as Stripe.Charge);
+                break;
             case 'payment_intent.succeeded':
                 await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
                 break;
@@ -102,6 +105,38 @@ export async function POST(req: Request) {
         );
     }
 }
+
+async function handleChargeSucceeded(charge: Stripe.Charge) {
+    console.log('Charge succeeded:', charge.id);
+  
+    try {
+      const bookingIdsRaw = charge.metadata.bookingIds;
+      if (!bookingIdsRaw) {
+        console.error('No bookingIds found in charge metadata');
+        return;
+      }
+  
+      const bookingIds = bookingIdsRaw.split(',').map(id => new ObjectId(id.trim()));
+  
+      const { db } = await connectToDatabase();
+      const result = await db.collection('bookings').updateMany(
+        { _id: { $in: bookingIds } },
+        {
+          $set: {
+            status: 'confirmed',
+            paymentStatus: 'succeeded',
+            updatedAt: new Date()
+          }
+        }
+      );
+  
+      console.log('Booking update result:', result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error in charge succeeded handler:', message);
+    }
+  }
+  
 
 async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     console.log('PaymentIntent was successful!', paymentIntent);
