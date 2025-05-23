@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/utils';
+import { generateBookingPDF } from '@/utils/pdfGenerator';
 
 interface BookingDate {
     date: string;
@@ -88,49 +89,43 @@ const MyBookingsPage = () => {
         }
     }, [status]);
 
-    const handleDownloadConfirmation = (booking: Booking) => {
+    const handleDownloadConfirmation = async (booking: Booking) => {
         try {
-            // Create booking summary text
-            const summary = [
-                '=== HIRE A CLINIC - BOOKING CONFIRMATION ===',
-                '',
-                `Booking ID: ${booking._id}`,
-                'Rooms:',
-                ...booking.rooms.map(room => [
-                    `  Room ${room.roomId}:`,
-                    `  Time Slot: ${formatTimeSlot(room.timeSlot)}`,
-                    '  Dates:',
-                    ...room.dates.map(date => `    - ${formatDate(date.date)} (${date.startTime} - ${date.endTime})`)
-                ]).flat(),
-                '',
-                `Amount Paid: $${booking.totalAmount.toFixed(2)}`,
-                booking.paymentDetails?.securityDeposit ? `Security Deposit: $${booking.paymentDetails.securityDeposit.toFixed(2)}` : '',
-                `Booking Date: ${new Date(booking.createdAt).toLocaleString()}`,
-                '',
-                '=== ADDITIONAL INFORMATION ===',
-                'For any queries, please contact our support team.',
-                '',
-                '=== TERMS AND CONDITIONS ===',
-                '1. Please arrive 15 minutes before your scheduled time',
-                '2. Cancellations must be made 48 hours in advance',
-                '3. Please follow all clinic safety protocols',
-                '4. Keep this confirmation for your records'
-            ].filter(Boolean).join('\n');
+            // Format the booking data for PDF generation
+            const bookingDetails = {
+                customerName: session?.user?.name || 'Guest',
+                email: session?.user?.email || '',
+                bookingNumber: booking._id,
+                bookingType: 'Daily', // This would need to be dynamic if you have different types
+                bookingDate: new Date(booking.createdAt).toLocaleDateString(),
+                roomDetails: booking.rooms.map(room => ({
+                    roomNumber: room.roomId,
+                    timeSlot: formatTimeSlot(room.timeSlot),
+                    dates: room.dates.map(date => 
+                        new Date(date.date).toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        })
+                    )
+                })),
+                paymentDetails: {
+                    subtotal: booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0),
+                    tax: (booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0)) * 0.035, // 3.5% tax
+                    securityDeposit: booking.paymentDetails?.securityDeposit || 0,
+                    totalAmount: booking.totalAmount
+                }
+            };
 
-            // Create blob and download
-            const blob = new Blob([summary], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `booking-${booking._id}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-            toast.success('Booking confirmation downloaded successfully');
+            // Generate and download PDF
+            const doc = generateBookingPDF(bookingDetails);
+            doc.save(`booking-confirmation-${booking._id}.pdf`);
+            
+            toast.success('Booking confirmation downloaded as PDF');
         } catch (error) {
-            console.error('Error downloading confirmation:', error);
-            toast.error('Failed to download confirmation');
+            console.error('Error generating PDF:', error);
+            toast.error('Failed to generate PDF');
         }
     };
 
@@ -225,73 +220,90 @@ const MyBookingsPage = () => {
                                 {bookings.map((booking) => (
                                     <div
                                         key={booking._id}
-                                        className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                                        className="border rounded-lg p-6 hover:shadow-md transition-shadow"
                                     >
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div>
-                                                <h3 className="text-lg font-semibold">
-                                                    {booking.rooms?.map((room, index) => (
-                                                        <span key={room.roomId}>
-                                                            {`Room ${room.roomId}`}
-                                                            {index < (booking.rooms?.length ?? 0) - 1 ? ', ' : ''}
+                                        <div className="flex flex-col md:flex-row gap-6">
+                                            {/* Left Column - Booking Overview */}
+                                            <div className="md:w-2/3 space-y-6">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h3 className="text-xl font-bold text-gray-800 mb-1">Booking #{booking._id.slice(-6).toUpperCase()}</h3>
+                                                        <p className="text-gray-600">
+                                                            Booked on {new Date(booking.createdAt).toLocaleDateString('en-US', {
+                                                                year: 'numeric',
+                                                                month: 'long',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center space-x-3">
+                                                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
+                                                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                                                         </span>
-                                                    )) ?? 'No rooms'}
-                                                </h3>
-                                                <p className="text-gray-600">
-                                                    Booked on {new Date(booking.createdAt).toLocaleDateString()}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center space-x-4">
-                                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                                                    {booking.status}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleDownloadConfirmation(booking)}
-                                                    className="text-blue-600 hover:text-blue-800"
-                                                    title="Download Confirmation"
-                                                >
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {booking.rooms?.map((room, roomIndex) => (
-                                            <div 
-                                                key={`${booking._id}-${room.roomId}-${roomIndex}`} 
-                                                className={`p-4 rounded-lg mb-4 ${
-                                                    room.timeSlot === 'morning' 
-                                                        ? 'bg-gradient-to-b from-blue-100 to-white' 
-                                                        : room.timeSlot === 'evening'
-                                                        ? 'bg-gradient-to-t from-blue-100 to-white'
-                                                        : 'bg-blue-50'
-                                                }`}
-                                            >
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <p className="text-sm text-gray-600">Room</p>
-                                                        <p className="font-medium">Room {room.roomId}</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-sm text-gray-600">Time Slot</p>
-                                                        <p className="font-medium">{formatTimeSlot(room.timeSlot)}</p>
-                                                    </div>
-                                                    <div className="col-span-2">
-                                                        <p className="text-sm text-gray-600">Dates</p>
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                                            {room.dates?.map((date, i) => (
-                                                                <p key={`${room.roomId}-${date.date}-${i}`} className="font-medium">
-                                                                    {formatDate(date.date)} ({date.startTime} - {date.endTime})
-                                                                </p>
-                                                            ))}
-                                                        </div>
+                                                        <button
+                                                            onClick={() => handleDownloadConfirmation(booking)}
+                                                            className="p-2 rounded-full hover:bg-gray-100 text-blue-600 hover:text-blue-800 transition-colors"
+                                                            title="Download Confirmation"
+                                                        >
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                            </svg>
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
 
-                                        {renderPriceBreakdown(booking)}
+                                                {/* Rooms Grid */}
+                                                <div className="grid grid-cols-1 gap-4">
+                                                    {booking.rooms?.map((room, roomIndex) => (
+                                                        <div 
+                                                            key={`${booking._id}-${room.roomId}-${roomIndex}`}
+                                                            className={`p-4 rounded-lg ${
+                                                                room.timeSlot === 'morning' 
+                                                                    ? 'bg-gradient-to-r from-blue-50 to-white' 
+                                                                    : room.timeSlot === 'evening'
+                                                                    ? 'bg-gradient-to-r from-blue-100 to-white'
+                                                                    : 'bg-blue-50'
+                                                            }`}
+                                                        >
+                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-gray-500">Room</p>
+                                                                    <p className="font-semibold text-lg">Room {room.roomId}</p>
+                                                                    <p className="text-sm text-gray-600">{room.name}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-gray-500">Time Slot</p>
+                                                                    <p className="font-semibold">{formatTimeSlot(room.timeSlot)}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-gray-500">Dates ({room.dates?.length})</p>
+                                                                    <div className="space-y-1 mt-1">
+                                                                        {room.dates?.slice(0, 2).map((date, i) => (
+                                                                            <p key={i} className="text-sm">
+                                                                                {formatDate(date.date)}: {date.startTime} - {date.endTime}
+                                                                            </p>
+                                                                        ))}
+                                                                        {room.dates?.length > 2 && (
+                                                                            <p className="text-xs text-blue-600">+{room.dates.length - 2} more dates</p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Right Column - Price Summary */}
+                                            <div className="md:w-1/3">
+                                                <div className="bg-gray-50 p-4 rounded-lg h-full">
+                                                    <h4 className="font-semibold text-lg mb-4 pb-2 border-b border-gray-200">Price Summary</h4>
+                                                    {renderPriceBreakdown(booking)}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

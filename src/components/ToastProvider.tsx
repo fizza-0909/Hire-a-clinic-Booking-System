@@ -5,10 +5,10 @@ import { Toaster } from 'react-hot-toast';
 export default function ToastProvider() {
     return (
         <Toaster
-            position="bottom-right"
+            position="top-right"
             gutter={12}
             containerStyle={{
-                bottom: 20,
+                top: 20,
                 right: 20,
                 fontSize: '14px',
             }}
