@@ -100,23 +100,25 @@ export async function POST(req: Request) {
 
 async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     console.log('PaymentIntent was successful!', paymentIntent);
-    
+
     try {
-        const bookingId = paymentIntent.metadata.bookingId;
-        if (!bookingId) {
-            console.error('No bookingId found in payment intent metadata');
+        const bookingIdsRaw = paymentIntent.metadata.bookingIds;
+        if (!bookingIdsRaw) {
+            console.error('No bookingIds found in payment intent metadata');
             return;
         }
 
+        const bookingIds = bookingIdsRaw.split(',').map(id => new ObjectId(id.trim()));
+
         const { db } = await connectToDatabase();
-        const result = await db.collection('bookings').updateOne(
-            { _id: new ObjectId(bookingId) },
-            { 
-                $set: { 
+        const result = await db.collection('bookings').updateMany(
+            { _id: { $in: bookingIds } },
+            {
+                $set: {
                     status: 'confirmed',
                     paymentStatus: 'succeeded',
                     updatedAt: new Date()
-                } 
+                }
             }
         );
 
