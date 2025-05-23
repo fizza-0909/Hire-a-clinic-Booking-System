@@ -1,224 +1,488 @@
+// src/app/api/webhooks/stripe/route.ts
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { headers } from 'next/headers';
 import { connectToDatabase } from '@/lib/mongodb';
-import fs from 'fs/promises';
-import path from 'path';
 import { ObjectId } from 'mongodb';
 
-// Setup logging
-const logToFile = async (message: string) => {
-    try {
-        const logPath = path.join(process.cwd(), 'webhook-logs.txt');
-        const timestamp = new Date().toISOString();
-        const logEntry = `[${timestamp}] ${message}\n`; // Use Unix-style line ending
-
-        // Ensure the file exists with proper encoding
-        if (!await fs.access(logPath).then(() => true).catch(() => false)) {
-            await fs.writeFile(logPath, '', { encoding: 'utf8' });
-        }
-
-        // Append the log entry
-        await fs.appendFile(logPath, logEntry, {
-            encoding: 'utf8',
-            flag: 'a'
-        });
-
-        // Also log to console for immediate feedback
-        console.log(`WEBHOOK: ${message}`);
-    } catch (error) {
-        console.error('Error writing to log file:', error);
-        // If we can't write to the file, at least log to console
-        console.log(`WEBHOOK (console only): ${message}`);
-    }
-};
-
-if (!process.env.STRIPE_SECRET_KEY) {
-    console.error('STRIPE_SECRET_KEY is not set in environment variables');
-    throw new Error('STRIPE_SECRET_KEY is not set');
-}
-
-if (!process.env.STRIPE_WEBHOOK_SECRET) {
-    console.error('STRIPE_WEBHOOK_SECRET is not set in environment variables');
-    throw new Error('STRIPE_WEBHOOK_SECRET is not set');
-}
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2023-10-16' as Stripe.LatestApiVersion,
+// Initialize Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2023-10-16',
 });
 
+// Route configuration
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const fetchCache = 'force-no-store';
+
+// CORS headers
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, stripe-signature',
+};
+
 export async function POST(req: Request) {
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+        return new NextResponse(null, { 
+            status: 200, 
+            headers: corsHeaders 
+        });
+    }
+
     try {
-        await logToFile('=== Webhook Request Received ===');
-        await logToFile(`Request URL: ${req.url}`);
-        await logToFile(`Request Method: ${req.method}`);
-
+        console.log('=== Webhook Request Received ===');
+        
+        // Get raw body
         const body = await req.text();
-        await logToFile(`Request Body: ${body.substring(0, 500)}...`);  // Log first 500 chars of body
-
-        const headersList = headers();
-        const signature = headersList.get('stripe-signature');
-        await logToFile(`Stripe Signature Present: ${!!signature}`);
-
-        if (!signature) {
-            await logToFile('No Stripe signature found in request');
-            return NextResponse.json({ error: 'No signature' }, { status: 400 });
+        if (!body) {
+            throw new Error('No request body');
         }
 
-        // Verify the webhook signature
+        // Verify required environment variables
+        if (!process.env.STRIPE_WEBHOOK_SECRET) {
+            throw new Error('STRIPE_WEBHOOK_SECRET is not set');
+        }
+
+        // Get and verify signature
+        const signature = headers().get('stripe-signature') || '';
+        if (!signature) {
+            throw new Error('Missing stripe-signature header');
+        }
+
+        // Verify webhook signature
         let event: Stripe.Event;
         try {
             event = stripe.webhooks.constructEvent(
                 body,
                 signature,
-                process.env.STRIPE_WEBHOOK_SECRET!
+                process.env.STRIPE_WEBHOOK_SECRET
             );
-            await logToFile(`Event verified successfully - Type: ${event.type}, ID: ${event.id}`);
-            await logToFile(`Event Data: ${JSON.stringify(event.data.object, null, 2)}`);
+            console.log('Stripe event verified:', { 
+                type: event.type, 
+                id: event.id 
+            });
         } catch (err) {
-            const error = err as Error;
-            await logToFile(`Webhook signature verification failed: ${error.message}`);
-            await logToFile(`STRIPE_WEBHOOK_SECRET length: ${process.env.STRIPE_WEBHOOK_SECRET?.length}`);
-            return NextResponse.json({ error: error.message }, { status: 400 });
+            console.error('Webhook signature verification failed:', err);
+            return new NextResponse(
+                JSON.stringify({ error: 'Webhook signature verification failed' }),
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        // Handle the event
+        switch (event.type) {
+            case 'payment_intent.succeeded':
+                await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
+                break;
+            case 'payment_intent.payment_failed':
+                await handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+                break;
+            default:
+                console.log(`Unhandled event type: ${event.type}`);
+        }
+
+        // Return a response to acknowledge receipt of the event
+        return new NextResponse(
+            JSON.stringify({ received: true }),
+            { status: 200, headers: corsHeaders }
+        );
+
+    } catch (error) {
+        console.error('Error processing webhook:', error);
+        return new NextResponse(
+            JSON.stringify({ error: 'Error processing webhook' }),
+            { status: 400, headers: corsHeaders }
+        );
+    }
+}
+
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+    console.log('PaymentIntent was successful!', paymentIntent);
+    
+    try {
+        const bookingId = paymentIntent.metadata.bookingId;
+        if (!bookingId) {
+            console.error('No bookingId found in payment intent metadata');
+            return;
         }
 
         const { db } = await connectToDatabase();
-
-        if (event.type === 'payment_intent.succeeded') {
-            await logToFile('=== Processing Successful Payment ===');
-            const paymentIntent = event.data.object as Stripe.PaymentIntent;
-            await logToFile(`Payment Intent ID: ${paymentIntent.id}`);
-            await logToFile(`Amount: ${paymentIntent.amount}`);
-            await logToFile(`Metadata: ${JSON.stringify(paymentIntent.metadata)}`);
-
-            const { bookingIds } = paymentIntent.metadata || {};
-
-            if (!bookingIds) {
-                await logToFile('No booking IDs found in metadata');
-                return NextResponse.json({ message: 'No booking IDs found' }, { status: 200 });
+        const result = await db.collection('bookings').updateOne(
+            { _id: new ObjectId(bookingId) },
+            { 
+                $set: { 
+                    status: 'confirmed',
+                    paymentStatus: 'succeeded',
+                    updatedAt: new Date()
+                } 
             }
-
-            const bookingIdArray = bookingIds.split(',').map(id => new ObjectId(id.trim()));
-            await logToFile(`Processing bookings: ${bookingIds}`);
-
-            try {
-                // First, verify these bookings exist and are pending
-                const existingBookings = await db.collection('bookings')
-                    .find({
-                        _id: { $in: bookingIdArray },
-                        'paymentDetails.status': { $ne: 'succeeded' }
-                    })
-                    .toArray();
-
-                await logToFile(`Found ${existingBookings.length} bookings to update`);
-
-                if (existingBookings.length === 0) {
-                    await logToFile('No eligible bookings found for update');
-                    return NextResponse.json({
-                        message: 'No eligible bookings found',
-                        bookingIds: bookingIds
-                    }, { status: 200 });
-                }
-
-                // When payment succeeds, immediately update booking status
-                const result = await db.collection('bookings').updateMany(
-                    {
-                        _id: { $in: bookingIdArray }
-                    },
-                    {
-                        $set: {
-                            status: 'confirmed',
-                            paymentStatus: 'succeeded',
-                            totalAmount: paymentIntent.amount / 100, // Convert from cents to dollars
-                            paymentDetails: {
-                                status: 'succeeded',
-                                confirmedAt: new Date(),
-                                paymentIntentId: paymentIntent.id,
-                                amount: paymentIntent.amount,
-                                currency: paymentIntent.currency,
-                                paymentMethodType: paymentIntent.payment_method_types?.[0] || 'card'
-                            },
-                            updatedAt: new Date()
-                        }
-                    }
-                );
-
-                await logToFile(`Update result - Matched: ${result.matchedCount}, Modified: ${result.modifiedCount}`);
-
-                // Verify the update
-                const verifyBookings = await db.collection('bookings')
-                    .find({
-                        _id: { $in: bookingIdArray },
-                        'paymentDetails.status': 'succeeded'
-                    })
-                    .toArray();
-
-                await logToFile(`Verification - Found ${verifyBookings.length} succeeded bookings`);
-
-                return NextResponse.json({
-                    message: 'Payment confirmed and bookings updated',
-                    updated: result.modifiedCount,
-                    verified: verifyBookings.length
-                });
-            } catch (dbError) {
-                await logToFile(`Database error: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
-                return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
-            }
-        }
-
-        if (event.type === 'payment_intent.payment_failed') {
-            await logToFile('=== Processing Failed Payment ===');
-            const paymentIntent = event.data.object as Stripe.PaymentIntent;
-            await logToFile(`Failed Payment Intent ID: ${paymentIntent.id}`);
-            const { bookingIds } = paymentIntent.metadata || {};
-
-            if (!bookingIds) {
-                await logToFile('No booking IDs found in failed payment metadata');
-                return NextResponse.json({ message: 'No booking IDs found' }, { status: 200 });
-            }
-
-            const bookingIdArray = bookingIds.split(',').map(id => new ObjectId(id.trim()));
-            await logToFile(`Processing failed bookings: ${bookingIds}`);
-
-            try {
-                // When payment fails, mark as rejected
-                const result = await db.collection('bookings').updateMany(
-                    {
-                        _id: { $in: bookingIdArray }
-                    },
-                    {
-                        $set: {
-                            status: 'cancelled',
-                            paymentStatus: 'rejected',
-                            paymentDetails: {
-                                status: 'rejected',
-                                failedAt: new Date(),
-                                failureMessage: paymentIntent.last_payment_error?.message,
-                                paymentIntentId: paymentIntent.id
-                            },
-                            updatedAt: new Date()
-                        }
-                    }
-                );
-
-                await logToFile(`Failed payment update result - Matched: ${result.matchedCount}, Modified: ${result.modifiedCount}`);
-                return NextResponse.json({
-                    message: 'Payment failed status updated',
-                    updated: result.modifiedCount
-                });
-            } catch (dbError) {
-                await logToFile(`Database error in failed payment: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
-                return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
-            }
-        }
-
-        await logToFile(`Unhandled event type: ${event.type}`);
-        return NextResponse.json({ received: true });
-    } catch (error) {
-        await logToFile(`Webhook processing error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        return NextResponse.json(
-            { error: 'Webhook handler failed' },
-            { status: 400 }
         );
+
+        console.log('Booking update result:', {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Error processing booking confirmation:', errorMessage);
     }
-} 
+}
+
+async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
+    console.error('Payment failed!', paymentIntent);
+    
+    try {
+        const bookingId = paymentIntent.metadata.bookingId;
+        if (!bookingId) {
+            console.error('No bookingId found in payment intent metadata');
+            return;
+        }
+
+        await updateBookingStatus(bookingId, 'failed');
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Error processing failed payment:', errorMessage);
+    }
+}
+
+async function updateBookingStatus(bookingId: string, status: string): Promise<void> {
+    try {
+        const { db } = await connectToDatabase();
+        await db.collection('bookings').updateOne(
+            { _id: new ObjectId(bookingId) },
+            { 
+                $set: { 
+                    status: status,
+                    paymentStatus: status === 'confirmed' ? 'succeeded' : 'failed',
+                    updatedAt: new Date()
+                } 
+            }
+        );
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Error updating booking status:', errorMessage);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import Stripe from 'stripe';
+// import { headers } from 'next/headers';
+// import { connectToDatabase } from '@/lib/mongodb';
+// import { ObjectId } from 'mongodb';
+
+// // This is needed to prevent Next.js from parsing the body
+// export const dynamic = 'force-dynamic';
+
+// // Initialize Stripe
+// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+//     apiVersion: '2023-10-16' as Stripe.LatestApiVersion,
+// });
+
+// // CORS headers
+// const corsHeaders = {
+//     'Access-Control-Allow-Origin': '*',
+//     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+//     'Access-Control-Allow-Headers': 'Content-Type, stripe-signature',
+// };
+
+// // Disable Next.js body parser for this route
+// export const config = {
+//     api: { 
+//         bodyParser: false 
+//     }
+// };
+
+// export async function POST(req: Request) {
+//     // Handle CORS preflight
+//     if (req.method === 'OPTIONS') {
+//         return new Response(null, { 
+//             status: 200, 
+//             headers: corsHeaders 
+//         });
+//     }
+
+//     // Log the incoming request
+//     console.log('=== Webhook Request Received ===');
+//     console.log('Method:', req.method);
+//     console.log('URL:', req.url);
+    
+//     // Get the raw body as text
+//     const body = await req.text();
+    
+//     if (!body) {
+//         console.error('No body received in webhook');
+//         return new Response(
+//             JSON.stringify({ error: 'No body received' }), 
+//             { 
+//                 status: 400, 
+//                 headers: { 
+//                     'Content-Type': 'application/json',
+//                     ...corsHeaders 
+//                 } 
+//             }
+//         );
+//     }
+
+//     try {
+//         console.log('=== Processing Stripe Webhook ===');
+        
+//         // Verify required environment variables
+//         if (!process.env.STRIPE_WEBHOOK_SECRET) {
+//             const error = 'STRIPE_WEBHOOK_SECRET is not set';
+//             console.error(error);
+//             return new Response(
+//                 JSON.stringify({ error }), 
+//                 { 
+//                     status: 400, 
+//                     headers: { 
+//                         'Content-Type': 'application/json',
+//                         ...corsHeaders 
+//                     } 
+//                 }
+//             );
+//         }
+
+//         // Get and verify signature
+//         const signature = headers().get('stripe-signature');
+//         if (!signature) {
+//             const error = 'Missing stripe-signature header';
+//             console.error(error);
+//             return new Response(
+//                 JSON.stringify({ error }), 
+//                 { 
+//                     status: 400, 
+//                     headers: { 
+//                         'Content-Type': 'application/json',
+//                         ...corsHeaders 
+//                     } 
+//                 }
+//             );
+//         }
+
+//         // Verify webhook signature
+//         let event: Stripe.Event;
+//         try {
+//             event = stripe.webhooks.constructEvent(
+//                 body,
+//                 signature,
+//                 process.env.STRIPE_WEBHOOK_SECRET
+//             );
+//             console.log('Stripe event verified:', { 
+//                 type: event.type, 
+//                 id: event.id 
+//             });
+//         } catch (err) {
+//             const error = `Signature verification failed: ${err instanceof Error ? err.message : 'Unknown error'}`;
+//             console.error(error);
+//             return new Response(
+//                 JSON.stringify({ error }), 
+//                 { 
+//                     status: 400, 
+//                     headers: { 
+//                         'Content-Type': 'application/json',
+//                         ...corsHeaders 
+//                     } 
+//                 }
+//             );
+//         }
+
+//         // Handle specific event types
+//         switch (event.type) {
+//             case 'payment_intent.succeeded':
+//                 return await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
+//             case 'payment_intent.payment_failed':
+//                 return await handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+//             default:
+//                 console.log(`Unhandled event type: ${event.type}`);
+//                 return new Response(
+//                     JSON.stringify({ received: true, message: `Unhandled event type: ${event.type}` }), 
+//                     { 
+//                         status: 200, 
+//                         headers: { 
+//                             'Content-Type': 'application/json',
+//                             ...corsHeaders 
+//                         } 
+//                     }
+//                 );
+//         }
+//     } catch (error) {
+//         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//         console.error('Error processing webhook:', errorMessage);
+//         return new Response(
+//             JSON.stringify({ 
+//                 success: false, 
+//                 error: errorMessage 
+//             }), 
+//             { 
+//                 status: 400, 
+//                 headers: { 
+//                     'Content-Type': 'application/json',
+//                     ...corsHeaders 
+//                 } 
+//             }
+//         );
+//     }
+// }
+
+// async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+//     try {
+//         console.log('PaymentIntent succeeded:', {
+//             id: paymentIntent.id,
+//             amount: paymentIntent.amount,
+//             currency: paymentIntent.currency,
+//             metadata: paymentIntent.metadata
+//         });
+
+//         // Process booking confirmation if bookingId exists in metadata
+//         if (paymentIntent.metadata.bookingId) {
+//             await processBookingConfirmation(paymentIntent.metadata.bookingId);
+//         }
+
+//         return new Response(
+//             JSON.stringify({ 
+//                 success: true,
+//                 message: 'Payment processed successfully',
+//                 paymentIntentId: paymentIntent.id,
+//                 amount: paymentIntent.amount,
+//                 currency: paymentIntent.currency
+//             }),
+//             { 
+//                 status: 200,
+//                 headers: { 
+//                     'Content-Type': 'application/json',
+//                     ...corsHeaders 
+//                 } 
+//             }
+//         );
+//     } catch (error) {
+//         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//         console.error('Error handling successful payment:', errorMessage);
+//         return new Response(
+//             JSON.stringify({ 
+//                 success: false,
+//                 error: `Failed to process payment: ${errorMessage}`
+//             }),
+//             { 
+//                 status: 500,
+//                 headers: { 
+//                     'Content-Type': 'application/json',
+//                     ...corsHeaders 
+//                 } 
+//             }
+//         );
+//     }
+// }
+
+// async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
+//     try {
+//         const error = paymentIntent.last_payment_error?.message || 'Unknown error';
+//         console.error('PaymentIntent failed:', {
+//             id: paymentIntent.id,
+//             error: error
+//         });
+
+//         // Update booking status to failed if needed
+//         if (paymentIntent.metadata.bookingId) {
+//             await updateBookingStatus(paymentIntent.metadata.bookingId, 'failed');
+//         }
+
+//         return new Response(
+//             JSON.stringify({ 
+//                 success: false,
+//                 error: `Payment failed: ${error}`
+//             }),
+//             { 
+//                 status: 400,
+//                 headers: { 
+//                     'Content-Type': 'application/json',
+//                     ...corsHeaders 
+//                 } 
+//             }
+//         );
+//     } catch (error) {
+//         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//         console.error('Error handling failed payment:', errorMessage);
+//         return new Response(
+//             JSON.stringify({ 
+//                 success: false,
+//                 error: `Failed to process payment failure: ${errorMessage}`
+//             }),
+//             { 
+//                 status: 500,
+//                 headers: { 
+//                     'Content-Type': 'application/json',
+//                     ...corsHeaders 
+//                 } 
+//             }
+//         );
+//     }
+// }
+
+// async function processBookingConfirmation(bookingId: string): Promise<void> {
+//     try {
+//         console.log('Processing booking confirmation for:', bookingId);
+        
+//         // Connect to database
+//         const { db } = await connectToDatabase();
+        
+//         // Update booking status
+//         const result = await db.collection('bookings').updateOne(
+//             { _id: new ObjectId(bookingId) },
+//             { 
+//                 $set: { 
+//                     status: 'confirmed',
+//                     paymentStatus: 'succeeded',
+//                     updatedAt: new Date()
+//                 } 
+//             }
+//         );
+
+//         console.log('Booking update result:', {
+//             matchedCount: result.matchedCount,
+//             modifiedCount: result.modifiedCount
+//         });
+//     } catch (error) {
+//         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//         console.error('Error processing booking confirmation:', errorMessage);
+//         // Don't fail the webhook for booking processing errors
+//     }
+// }
+
+// async function updateBookingStatus(bookingId: string, status: string): Promise<void> {
+//     try {
+//         const { db } = await connectToDatabase();
+//         await db.collection('bookings').updateOne(
+//             { _id: new ObjectId(bookingId) },
+//             { 
+//                 $set: { 
+//                     status: status,
+//                     paymentStatus: 'failed',
+//                     updatedAt: new Date()
+//                 } 
+//             }
+//         );
+//     } catch (error) {
+//         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//         console.error('Error updating booking status:', errorMessage);
+//     }
+// }

@@ -193,7 +193,8 @@ const SummaryPage = () => {
 
             const updatedBookingData = {
                 ...bookingData,
-                totalAmount: priceBreakdownData.total
+                totalAmount: priceBreakdownData.total,
+                priceBreakdown: priceBreakdownData
             };
             sessionStorage.setItem('bookingData', JSON.stringify(updatedBookingData));
 

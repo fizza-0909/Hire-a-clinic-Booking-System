@@ -28,9 +28,11 @@ interface Booking {
     paymentStatus: string;
     totalAmount: number;
     createdAt: string;
-    paymentDetails?: {
-        amount: number;
-        securityDeposit?: number;
+    priceBreakdown: {
+        subtotal: number;
+        tax: number;
+        securityDeposit: number;
+        total: number;
     };
 }
 
@@ -111,10 +113,10 @@ const MyBookingsPage = () => {
                     )
                 })),
                 paymentDetails: {
-                    subtotal: booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0),
-                    tax: (booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0)) * 0.035, // 3.5% tax
-                    securityDeposit: booking.paymentDetails?.securityDeposit || 0,
-                    totalAmount: booking.totalAmount
+                    subtotal: booking.priceBreakdown.subtotal,
+                    tax: booking.priceBreakdown.tax,
+                    securityDeposit: booking.priceBreakdown.securityDeposit,
+                    totalAmount: booking.priceBreakdown.total
                 }
             };
 
@@ -130,10 +132,12 @@ const MyBookingsPage = () => {
     };
 
     const renderPriceBreakdown = (booking: Booking) => {
-        const subtotal = booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0);
-        const tax = subtotal * 0.035; // 3.5% tax
-        const securityDeposit = booking.paymentDetails?.securityDeposit || 0;
-        const total = booking.totalAmount;
+        const { subtotal, tax, securityDeposit, total } = booking.priceBreakdown || {
+            subtotal: booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0),
+            tax: (booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0)) * 0.035,
+            securityDeposit: booking.paymentDetails?.securityDeposit || 0,
+            total: booking.totalAmount
+        };
 
         return (
             <div className="mt-4 pt-4 border-t">

@@ -126,10 +126,10 @@ const BookingConfirmationPage = () => {
                         )
                     })),
                     paymentDetails: {
-                        subtotal: bookingData.totalAmount,
-                        tax: bookingData.totalAmount * 0.035, // 3.5% tax
-                        securityDeposit: !session?.user?.isVerified ? 250 : 0,
-                        totalAmount: bookingData.totalAmount + (bookingData.totalAmount * 0.035) + (!session?.user?.isVerified ? 250 : 0)
+                        subtotal: bookingData.priceBreakdown?.subtotal || 0,
+                        tax: bookingData.priceBreakdown?.tax || 0,
+                        securityDeposit: bookingData.priceBreakdown?.securityDeposit || 0,
+                        totalAmount: bookingData.priceBreakdown?.total || 0
                     }
                 };
 
