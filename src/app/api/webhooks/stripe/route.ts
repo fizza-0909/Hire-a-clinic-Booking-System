@@ -36,6 +36,11 @@ export async function POST(req: Request) {
         
         // Get raw body
         const body = await req.text();
+        const { db } = await connectToDatabase();
+        db.collection("WEBHOOK_LOGS").insertOne({
+            ...JSON.parse(body),
+            createdAt: new Date()
+        })
         if (!body) {
             throw new Error('No request body');
         }
