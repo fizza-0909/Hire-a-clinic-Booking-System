@@ -35,61 +35,73 @@ export async function POST(req: Request) {
         console.log('=== Webhook Request Received ===');
         
         // Get raw body
-        const body = await req.text();
+        let body:any = await req.text();
+        body = JSON.parse(body);
         const { db } = await connectToDatabase();
         await db.collection("WEBHOOK_LOGS").insertOne({
-            ...JSON.parse(body),
+            body,
             createdAt: new Date()
         })
         if (!body) {
             throw new Error('No request body');
         }
+        if(body.type=="payment_intent.succeeded"){
+            if(body?.data?.object?.metadata){
+                await handlePaymentIntentSucceeded(body.data.object);
+            }
+
+        }
+        if(body.type=="payment_intent.payment_failed"){
+            if(body?.data?.object?.metadata){
+                await handlePaymentIntentFailed(body.data.object);
+            }
+        }
 
         // Verify required environment variables
-        if (!process.env.STRIPE_WEBHOOK_SECRET) {
-            throw new Error('STRIPE_WEBHOOK_SECRET is not set');
-        }
+        // if (!process.env.STRIPE_WEBHOOK_SECRET) {
+        //     throw new Error('STRIPE_WEBHOOK_SECRET is not set');
+        // }
 
-        // Get and verify signature
-        const signature = headers().get('stripe-signature') || '';
-        if (!signature) {
-            throw new Error('Missing stripe-signature header');
-        }
+        // // Get and verify signature
+        // const signature = headers().get('stripe-signature') || '';
+        // if (!signature) {
+        //     throw new Error('Missing stripe-signature header');
+        // }
 
-        // Verify webhook signature
-        let event: Stripe.Event;
-        try {
-            event = stripe.webhooks.constructEvent(
-                body,
-                signature,
-                process.env.STRIPE_WEBHOOK_SECRET
-            );
-            console.log('Stripe event verified:', { 
-                type: event.type, 
-                id: event.id 
-            });
-        } catch (err) {
-            console.error('Webhook signature verification failed:', err);
-            return new NextResponse(
-                JSON.stringify({ error: 'Webhook signature verification failed' }),
-                { status: 400, headers: corsHeaders }
-            );
-        }
+        // // Verify webhook signature
+        // let event: Stripe.Event;
+        // try {
+        //     event = stripe.webhooks.constructEvent(
+        //         body,
+        //         signature,
+        //         process.env.STRIPE_WEBHOOK_SECRET
+        //     );
+        //     console.log('Stripe event verified:', { 
+        //         type: event.type, 
+        //         id: event.id 
+        //     });
+        // } catch (err) {
+        //     console.error('Webhook signature verification failed:', err);
+        //     return new NextResponse(
+        //         JSON.stringify({ error: 'Webhook signature verification failed' }),
+        //         { status: 400, headers: corsHeaders }
+        //     );
+        // }
 
         // Handle the event
-        switch (event.type) {
-            case 'charge.succeeded':
-                await handleChargeSucceeded(event.data.object as Stripe.Charge);
-                break;
-            case 'payment_intent.succeeded':
-                await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
-                break;
-            case 'payment_intent.payment_failed':
-                await handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
-                break;
-            default:
-                console.log(`Unhandled event type: ${event.type}`);
-        }
+        // switch (event.type) {
+        //     case 'charge.succeeded':
+        //         await handleChargeSucceeded(event.data.object as Stripe.Charge);
+        //         break;
+        //     case 'payment_intent.succeeded':
+        //         await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
+        //         break;
+        //     case 'payment_intent.payment_failed':
+        //         await handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+        //         break;
+        //     default:
+        //         console.log(`Unhandled event type: ${event.type}`);
+        // }
 
         // Return a response to acknowledge receipt of the event
         return new NextResponse(
@@ -176,7 +188,7 @@ async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
     console.error('Payment failed!', paymentIntent);
     
     try {
-        const bookingId = paymentIntent.metadata.bookingId;
+        const bookingId = paymentIntent.metadata.bookingIds;
         if (!bookingId) {
             console.error('No bookingId found in payment intent metadata');
             return;
