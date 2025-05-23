@@ -25,27 +25,32 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 const calculatePriceBreakdown = (rooms: BookingRoom[], bookingType: BookingType, isVerified: boolean): PriceBreakdown => {
     let subtotal = 0;
 
-    // Calculate subtotal based on room selections
+    // Calculate price for each room
     rooms.forEach(room => {
-        const basePrice = PRICING[bookingType][room.timeSlot];
-        const daysCount = room.dates.length;
-        subtotal += basePrice * daysCount;
+        const basePrice = room.timeSlot === 'full'
+            ? PRICING[bookingType].full
+            : PRICING[bookingType][room.timeSlot];
+
+        // For monthly bookings, use flat rate. For daily, multiply by days
+        if (bookingType === 'monthly') {
+            subtotal += basePrice; // Flat monthly rate
+        } else {
+            subtotal += basePrice * room.dates.length; // Daily rate * number of days
+        }
     });
 
     // Calculate tax (3.5%)
-    const tax = subtotal * PRICING.tax;
+    const tax = subtotal * 0.035;
 
-    // Only add security deposit if user is not verified
-    const securityDeposit = isVerified ? 0 : PRICING.securityDeposit;
+    // Calculate security deposit - only for unverified users
+    const securityDeposit = !isVerified ? PRICING.securityDeposit : 0;
 
-    // Calculate total
-    const total = Math.round((subtotal + tax + securityDeposit) * 100) / 100;
-
+    // Return all price components
     return {
-        subtotal: Math.round(subtotal * 100) / 100,
-        tax: Math.round(tax * 100) / 100,
+        subtotal,
+        tax,
         securityDeposit,
-        total
+        total: subtotal + tax + securityDeposit
     };
 };
 
@@ -54,16 +59,16 @@ const calculateTotalAmount = (bookingData: any) => {
 
     bookingData.rooms.forEach((room: any) => {
         const timeSlot = room.timeSlot as TimeSlot;
-        
+
         if (bookingData.bookingType === 'monthly') {
             // Get unique months for this specific room
             const monthRanges = new Map<string, { start: number, end: number }>();
-            
+
             room.dates.forEach((date: any) => {
                 const d = new Date(date.date || date);
                 const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
                 const dayOfMonth = d.getDate();
-                
+
                 if (!monthRanges.has(monthKey)) {
                     monthRanges.set(monthKey, { start: dayOfMonth, end: dayOfMonth });
                 } else {
@@ -78,7 +83,7 @@ const calculateTotalAmount = (bookingData: any) => {
                 const [year, monthNum] = month.split('-').map(Number);
                 const daysInMonth = new Date(year, monthNum + 1, 0).getDate();
                 const daysBooked = range.end - range.start + 1;
-                
+
                 // If booking covers more than 15 days, charge full month
                 // Otherwise, prorate based on daily rate
                 if (daysBooked > 15) {
@@ -110,11 +115,11 @@ const calculateTotalAmount = (bookingData: any) => {
 const getNext23WorkingDays = async (startDate: Date, roomId: string) => {
     const workingDays: Date[] = [];
     const currentDate = new Date(startDate);
-    
+
     // Get booked dates for the room
     const response = await fetch(`/api/bookings/availability/${roomId}`);
     const bookedDates = await response.json();
-    
+
     while (workingDays.length < 23) {
         // Skip weekends
         if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
@@ -126,7 +131,7 @@ const getNext23WorkingDays = async (startDate: Date, roomId: string) => {
         }
         currentDate.setDate(currentDate.getDate() + 1);
     }
-    
+
     return workingDays;
 };
 
@@ -136,7 +141,7 @@ const handleBookingTypeChange = async (type: BookingType, selectedRooms: Booking
         const updatedRooms = await Promise.all(selectedRooms.map(async (room) => {
             const startDate = new Date(); // Start from today
             const workingDays = await getNext23WorkingDays(startDate, room.roomId);
-            
+
             return {
                 ...room,
                 dates: workingDays.map(date => ({
@@ -186,14 +191,14 @@ const SummaryPage = () => {
 
         try {
             const bookingData = JSON.parse(bookingDataStr) as BookingData;
-            
+
             // Validate the booking data
             if (!bookingData.rooms || !Array.isArray(bookingData.rooms) || bookingData.rooms.length === 0) {
                 throw new Error('Invalid booking data: no rooms selected');
             }
 
             // Validate dates for each room
-            const hasInvalidDates = bookingData.rooms.some(room => 
+            const hasInvalidDates = bookingData.rooms.some(room =>
                 !validateBookingDates(room.dates.map(d => d.date))
             );
             if (hasInvalidDates) {
@@ -257,8 +262,8 @@ const SummaryPage = () => {
 
         setSelectedRooms(updatedRooms);
         const newPriceBreakdown = calculatePriceBreakdown(
-            updatedRooms, 
-            bookingType, 
+            updatedRooms,
+            bookingType,
             session?.user?.isVerified || false
         );
         setPriceBreakdown(newPriceBreakdown);

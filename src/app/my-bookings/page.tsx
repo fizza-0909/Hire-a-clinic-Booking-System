@@ -133,9 +133,9 @@ const MyBookingsPage = () => {
 
     const renderPriceBreakdown = (booking: Booking) => {
         const { subtotal, tax, securityDeposit, total } = booking.priceBreakdown || {
-            subtotal: booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0),
-            tax: (booking.totalAmount - (booking.paymentDetails?.securityDeposit || 0)) * 0.035,
-            securityDeposit: booking.paymentDetails?.securityDeposit || 0,
+            subtotal: booking.totalAmount - (booking?.paymentDetails?.securityDeposit || 0),
+            tax: (booking.totalAmount - (booking?.paymentDetails?.securityDeposit || 0)) * 0.035,
+            securityDeposit: booking?.paymentDetails?.securityDeposit || 0,
             total: booking.totalAmount
         };
 
