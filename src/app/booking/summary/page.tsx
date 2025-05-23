@@ -52,22 +52,42 @@ const calculatePriceBreakdown = (rooms: BookingRoom[], bookingType: BookingType,
 const calculateTotalAmount = (bookingData: any) => {
     let subtotal = 0;
 
-    // Count number of months selected
-    const uniqueMonths = new Set(
-        bookingData.rooms[0].dates.map((date: any) => {
-            const d = new Date(date.date || date);
-            return `${d.getFullYear()}-${d.getMonth()}`;
-        })
-    );
-    const numberOfMonths = uniqueMonths.size;
-
     bookingData.rooms.forEach((room: any) => {
         const timeSlot = room.timeSlot as TimeSlot;
         
         if (bookingData.bookingType === 'monthly') {
-            // For monthly bookings, use fixed rate × number of months
-            const monthlyRate = PRICING.monthly[timeSlot];
-            subtotal += monthlyRate * numberOfMonths;
+            // Get unique months for this specific room
+            const monthRanges = new Map<string, { start: number, end: number }>();
+            
+            room.dates.forEach((date: any) => {
+                const d = new Date(date.date || date);
+                const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+                const dayOfMonth = d.getDate();
+                
+                if (!monthRanges.has(monthKey)) {
+                    monthRanges.set(monthKey, { start: dayOfMonth, end: dayOfMonth });
+                } else {
+                    const range = monthRanges.get(monthKey)!;
+                    range.start = Math.min(range.start, dayOfMonth);
+                    range.end = Math.max(range.end, dayOfMonth);
+                }
+            });
+
+            // Calculate prorated charges for each month
+            monthRanges.forEach((range, month) => {
+                const [year, monthNum] = month.split('-').map(Number);
+                const daysInMonth = new Date(year, monthNum + 1, 0).getDate();
+                const daysBooked = range.end - range.start + 1;
+                
+                // If booking covers more than 15 days, charge full month
+                // Otherwise, prorate based on daily rate
+                if (daysBooked > 15) {
+                    subtotal += PRICING.monthly[timeSlot];
+                } else {
+                    const dailyRate = PRICING.daily[timeSlot];
+                    subtotal += dailyRate * daysBooked;
+                }
+            });
         } else {
             // For daily bookings
             const numberOfDates = room.dates.length;
