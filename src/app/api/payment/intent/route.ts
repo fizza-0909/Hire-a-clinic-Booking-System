@@ -149,12 +149,16 @@ export async function POST(req: Request) {
             }
         }
 
-        // Create pending bookings
-        const baseAmount = amount / 100; // Convert to dollars
+        // Use the amounts directly from bookingData.priceBreakdown
+        const priceBreakdown = bookingData.priceBreakdown;
+        if (!priceBreakdown) {
+            throw new Error('Price breakdown is required');
+        }
+
+        const subtotal = priceBreakdown.subtotal;
+        const tax = priceBreakdown.tax;
         const securityDeposit = requiresSecurityDeposit ? 250 : 0; // Fixed $250 security deposit
-        const totalBeforeTax = baseAmount + securityDeposit;
-        const tax = totalBeforeTax * 0.035; // 3.5% tax
-        const totalAmount = totalBeforeTax + tax;
+        const totalAmount = subtotal + tax + securityDeposit; // Use client calculated tax
 
         const bookingPromises = bookingData.rooms.map(room => 
             Booking.create({
@@ -171,7 +175,7 @@ export async function POST(req: Request) {
                 totalAmount: totalAmount,  // Add total amount
                 paymentDetails: {
                     status: 'rejected',  // Start as rejected until payment succeeds
-                    amount: baseAmount,
+                    amount: subtotal,
                     tax: tax,
                     securityDeposit: securityDeposit,
                     paymentIntentId: null  // Will be set when payment is processed
@@ -197,7 +201,7 @@ export async function POST(req: Request) {
                 bookingIds: bookingIds.join(','),
                 bookingType: bookingData.bookingType,
                 roomCount: bookingData.rooms.length.toString(),
-                baseAmount: baseAmount.toString(),
+                subtotal: subtotal.toString(),
                 tax: tax.toString(),
                 securityDeposit: securityDeposit.toString(),
                 totalAmount: totalAmount.toString()

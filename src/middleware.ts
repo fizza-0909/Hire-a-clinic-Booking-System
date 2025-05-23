@@ -41,7 +41,6 @@ export const config = {
     /*
      * Match all request paths except:
      * - /api/auth/* (authentication endpoints)
-     * - /api/webhooks/stripe (stripe webhook endpoint)
      * - /login (login page)
      * - /register (registration page)
      * - /verify-email (email verification page)
@@ -50,6 +49,6 @@ export const config = {
      * - /favicon.ico (favicon file)
      * - /images/* (public images)
      */
-    "/((?!api/auth|api/webhooks/stripe|login|register|verify-email|_next/static|_next/image|favicon.ico|images).*)"
+    "/((?!api/auth|login|register|verify-email|_next/static|_next/image|favicon.ico|images).*)"
   ]
 }; 

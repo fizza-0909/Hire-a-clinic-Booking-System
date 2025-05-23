@@ -34,6 +34,8 @@ export interface BookingData {
     bookingType: BookingType;
     totalAmount: number;
     isVerified?: boolean;
+    priceBreakdown?: PriceBreakdown;
+    includesSecurityDeposit?: boolean;
 }
 
 // Interface for booking status from API

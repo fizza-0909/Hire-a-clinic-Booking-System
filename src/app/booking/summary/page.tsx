@@ -317,7 +317,8 @@ const SummaryPage = () => {
                 })),
                 bookingType: parsedData.bookingType,
                 totalAmount: parsedData.totalAmount,
-                includesSecurityDeposit: !session?.user?.isVerified
+                includesSecurityDeposit: !session?.user?.isVerified,
+                priceBreakdown: parsedData.priceBreakdown // Include the price breakdown
             };
 
             const paymentData = {
