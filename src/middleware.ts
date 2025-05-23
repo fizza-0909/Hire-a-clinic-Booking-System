@@ -49,6 +49,8 @@ export const config = {
      * - /favicon.ico (favicon file)
      * - /images/* (public images)
      */
-    "/((?!api/auth|login|register|verify-email|_next/static|_next/image|favicon.ico|images).*)"
+    // "/((?!api/auth|login|register|verify-email|_next/static|_next/image|favicon.ico|images).*)"
+    "/((?!api/auth|api/webhooks/stripe|login|register|verify-email|_next/static|_next/image|favicon.ico|images).*)"
+
   ]
 }; 
