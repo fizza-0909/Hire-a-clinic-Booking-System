@@ -94,17 +94,18 @@ const MyBookingsPage = () => {
     const handleDownloadConfirmation = async (booking: Booking) => {
         try {
             // Format the booking data for PDF generation
+            debugger
             const bookingDetails = {
                 customerName: session?.user?.name || 'Guest',
                 email: session?.user?.email || '',
-                bookingNumber: booking._id,
+                bookingNumber: booking?._id,
                 bookingType: 'Daily', // This would need to be dynamic if you have different types
-                bookingDate: new Date(booking.createdAt).toLocaleDateString(),
-                roomDetails: booking.rooms.map(room => ({
-                    roomNumber: room.roomId,
-                    timeSlot: formatTimeSlot(room.timeSlot),
-                    dates: room.dates.map(date => 
-                        new Date(date.date).toLocaleDateString('en-US', {
+                bookingDate: new Date(booking?.createdAt).toLocaleDateString(),
+                roomDetails: booking?.rooms?.map(room => ({
+                    roomNumber: room?.roomId,
+                    timeSlot: formatTimeSlot(room?.timeSlot),
+                    dates: room?.dates?.map(date => 
+                        new Date(date?.date).toLocaleDateString('en-US', {
                             weekday: 'long',
                             year: 'numeric',
                             month: 'long',
@@ -113,13 +114,13 @@ const MyBookingsPage = () => {
                     )
                 })),
                 paymentDetails: {
-                    subtotal: booking.priceBreakdown.subtotal,
-                    tax: booking.priceBreakdown.tax,
-                    securityDeposit: booking.priceBreakdown.securityDeposit,
-                    totalAmount: booking.priceBreakdown.total
+                    subtotal: booking?.priceBreakdown?.subtotal,
+                    tax: booking?.priceBreakdown?.tax,
+                    securityDeposit: booking?.priceBreakdown?.securityDeposit,
+                    totalAmount: booking?.priceBreakdown?.total
                 }
             };
-
+            console.log(bookingDetails);
             // Generate and download PDF
             const doc = generateBookingPDF(bookingDetails);
             doc.save(`booking-confirmation-${booking._id}.pdf`);
@@ -127,7 +128,7 @@ const MyBookingsPage = () => {
             toast.success('Booking confirmation downloaded as PDF');
         } catch (error) {
             console.error('Error generating PDF:', error);
-            toast.error('Failed to generate PDF');
+            toast.error(`${error?.message} ${error?.stack}` || 'Failed to generate PDF');
         }
     };
 
@@ -144,12 +145,12 @@ const MyBookingsPage = () => {
                 <div className="flex justify-between items-center mb-2">
                     <span className="text-gray-600">Subtotal:</span>
                     <span className="text-lg font-semibold">
-                        ${subtotal.toFixed(2)}
+                        ${subtotal?.toFixed(2)}
                     </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-600 mb-2">
                     <span>Tax (3.5%):</span>
-                    <span>${tax.toFixed(2)}</span>
+                    <span>${tax?.toFixed(2)}</span>
                 </div>
                 {securityDeposit > 0 && (
                     <div className="flex justify-between items-center mb-2">
@@ -158,14 +159,14 @@ const MyBookingsPage = () => {
                             <span className="ml-1 text-xs text-blue-600">(Refundable)</span>
                         </div>
                         <span className="text-sm font-medium text-gray-800">
-                            ${securityDeposit.toFixed(2)}
+                            ${securityDeposit?.toFixed(2)}
                         </span>
                     </div>
                 )}
                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                     <span className="text-gray-600">Total Amount:</span>
                     <span className="text-lg font-semibold text-blue-600">
-                        ${total.toFixed(2)}
+                        ${total?.toFixed(2)}
                     </span>
                 </div>
                 {securityDeposit > 0 && (
@@ -247,7 +248,7 @@ const MyBookingsPage = () => {
                                                             {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                                                         </span>
                                                         <button
-                                                            onClick={() => handleDownloadConfirmation(booking)}
+                                                            onClick={() => {handleDownloadConfirmation(booking)}}
                                                             className="p-2 rounded-full hover:bg-gray-100 text-blue-600 hover:text-blue-800 transition-colors"
                                                             title="Download Confirmation"
                                                         >
