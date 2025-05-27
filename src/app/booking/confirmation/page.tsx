@@ -239,7 +239,7 @@ const BookingConfirmationPage = () => {
                             </div>
                             {(bookingDetails?.paymentDetails?.securityDeposit ?? 0) > 0 && (
                                 <div className="flex justify-between">
-                                    <span className="text-gray-600">Security Deposit (Refundable)</span>
+                                    <span className="text-gray-600">Membership Fee (Refundable)</span>
                                     <span className="font-medium">${bookingDetails?.paymentDetails.securityDeposit.toFixed(2)}</span>
                                 </div>
                             )}

@@ -24,7 +24,7 @@ const Header: React.FC = () => {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between h-16">
                     <div className="flex">
-                        <Link href="/" className="flex items-center">
+                        <Link href="https://hireaclinic.com/" className="flex items-center">
                             <span className="text-xl font-bold text-blue-600">Hire a Clinic</span>
                         </Link>
                     </div>

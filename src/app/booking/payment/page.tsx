@@ -373,9 +373,9 @@ const PaymentPage = () => {
                                 {!priceBreakdown.isVerified && (
                                     <div className="flex justify-between text-gray-600">
                                         <div>
-                                            <span>Security Deposit</span>
+                                            <span>Membership Fee</span>
                                             <div className="text-xs text-gray-500">
-                                                (Required for first booking - $250 per room, refundable)
+                                                (Required for first booking - refundable)
                                             </div>
                                         </div>
                                         <span>${priceBreakdown.securityDeposit.toFixed(2)}</span>

@@ -420,7 +420,7 @@ export async function sendVerificationEmail(
                         </div>
                     </div>
                     
-                    <p>Or click the button below to verify your email:</p>
+                    <p>Click the button below to verify your email by entering th above code:</p>
                     <div style="text-align: center; margin: 30px 0;">
                         <a href="${verificationUrl}" 
                            style="display: inline-block; background-color: #3b82f6; color: white; 

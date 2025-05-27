@@ -529,7 +529,7 @@ const CalendarPage: React.FC = () => {
                     {!session?.user?.isVerified && (
                         <div className="flex justify-between items-center text-sm text-gray-600">
                             <div className="flex-1">
-                                <span>Security Deposit</span>
+                                <span>Membership Fee</span>
                             </div>
                             <span>+ ${securityDeposit.toFixed(2)}</span>
                         </div>
@@ -541,7 +541,7 @@ const CalendarPage: React.FC = () => {
                         </div>
                         {!session?.user?.isVerified && (
                             <p className="text-xs text-gray-500 mt-1">
-                                *A refundable security deposit of $250 will be charged as this is your first booking
+                                *A refundable membership fee of $250 will be charged as this is your first booking
                             </p>
                         )}
                     </div>
@@ -734,7 +734,7 @@ const CalendarPage: React.FC = () => {
                 toast.error('Some selected dates are invalid. Please check your selection.');
                 return;
             }
-
+            //qasim
             // Format booking data
             const bookingData: BookingData = {
                 rooms: roomsWithDates.map(room => ({
@@ -1182,13 +1182,13 @@ const CalendarPage: React.FC = () => {
                                             <div className="flex justify-between items-center text-sm text-gray-600">
                                                 <div className="flex-1">
                                                     <div className="flex items-center">
-                                                        <span>Security Deposit</span>
+                                                        <span>Membership Fee</span>
                                                         <div className="ml-2 group relative">
                                                             <svg className="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                             </svg>
                                                             <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg">
-                                                                Security deposit is only charged for your first booking. It will be refunded according to our policy.
+                                                                Membership fee is only charged for your first booking. It will be refunded according to our policy.
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1204,7 +1204,7 @@ const CalendarPage: React.FC = () => {
                                             </div>
                                             {!session?.user?.isVerified && (
                                                 <p className="text-xs text-gray-500 mt-1">
-                                                    *A refundable security deposit of $250 will be charged as this is your first booking
+                                                    *A refundable membership fee of $250 will be charged as this is your first booking
                                                 </p>
                                             )}
                                         </div>

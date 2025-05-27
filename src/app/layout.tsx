@@ -7,7 +7,7 @@ import AuthProvider from '@/components/AuthProvider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
-  title: 'Texas Medical Clinic Booking',
+  title: 'Hire a Clinic Booking Portal',
   description: 'Book medical clinic rooms for your practice',
 };
 

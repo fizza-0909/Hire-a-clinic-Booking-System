@@ -488,13 +488,13 @@ const SummaryPage = () => {
                                     <div className="flex justify-between text-gray-600">
                                         <div className="flex-1">
                                             <div className="flex items-center">
-                                                <span>Security Deposit</span>
+                                                <span>Membership Fee</span>
                                                 <div className="ml-2 group relative">
                                                     <svg className="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                     </svg>
                                                     <div className="hidden group-hover:block absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg">
-                                                        Security deposit is only charged for your first booking. It will be refunded according to our policy.
+                                                        Membership fee is only charged for your first booking. It will be refunded according to our policy.
                                                     </div>
                                                 </div>
                                             </div>
@@ -510,7 +510,7 @@ const SummaryPage = () => {
                                     </div>
                                     {!session?.user?.isVerified && (
                                         <p className="text-xs text-gray-500 mt-1">
-                                            *Security deposit of $250 is included in the total as this is your first booking
+                                            *Membership fee of $250 is included in the total as this is your first booking
                                         </p>
                                     )}
                                 </div>
@@ -521,7 +521,7 @@ const SummaryPage = () => {
                         <div className="border-t border-gray-200 pt-6 mb-8">
                             <h2 className="text-xl font-semibold mb-4">Terms and Conditions</h2>
                             <div className="space-y-3 text-sm text-gray-700 mb-6">
-                                <p className="mb-2">• Payments are non-refundable. Only the security deposit is refundable as per policy.</p>
+                                <p className="mb-2">• Payments are non-refundable. Only the membership fee is refundable as per policy.</p>
                                 <p className="mb-2">• Renters are responsible for the equipment and space during their booked time slot.</p>
                                 <p className="mb-2">• Clinic owners must maintain a safe and professional environment.</p>
                                 <p className="mb-2">• Renters must respect booking times. If a renter arrives late, extra time will not be provided or compensated.</p>

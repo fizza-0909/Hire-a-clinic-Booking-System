@@ -86,7 +86,7 @@ const SuccessPage: React.FC = () => {
 
         lines.push('=== PAYMENT DETAILS ===');
         lines.push(`Total Amount: $${booking.totalAmount.toFixed(2)}`);
-        lines.push('Security Deposit: $250.00 (Refundable)');
+        lines.push('Membership Fee: $250.00 (Refundable)');
         lines.push('');
         lines.push('Thank you for choosing Hire a Clinic!');
         lines.push('For any queries, please contact our support team.');

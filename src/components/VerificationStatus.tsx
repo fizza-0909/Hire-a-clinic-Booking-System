@@ -53,7 +53,7 @@ const VerificationStatus = () => {
                     <div className={`mt-2 text-sm ${verificationStatus.isVerified ? 'text-green-700' : 'text-yellow-700'}`}>
                         {verificationStatus.isVerified ? (
                             <p>
-                                Your account is verified. You can make bookings without security deposit.
+                                Your account is verified.
                                 {verificationStatus.verifiedAt && (
                                     <span className="block mt-1 text-xs">
                                         Verified on: {new Date(verificationStatus.verifiedAt).toLocaleDateString()}
@@ -62,8 +62,7 @@ const VerificationStatus = () => {
                             </p>
                         ) : (
                             <p>
-                                Complete your first booking with a security deposit of $250 per room to become a verified user.
-                                Once verified, future bookings will not require a security deposit.
+                                Complete your first booking to become a verified user and a member.
                             </p>
                         )}
                     </div>
