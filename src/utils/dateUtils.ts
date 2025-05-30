@@ -76,7 +76,7 @@ export const validateBookingDates = (dates: string[]): boolean => {
 // Generate monthly booking dates
 export const generateMonthlyBookingDates = (
     startDate: Date,
-    maxDays: number = 30,
+    maxDays: number = 22,
     maxDaysToCheck: number = 60
 ): string[] => {
     const dates: string[] = [];
