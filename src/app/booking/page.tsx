@@ -35,7 +35,7 @@ const BookingOptions = () => {
             id: 2,
             name: 'Room 2',
             image: '/images/room2.png',
-            description: 'Well-lit examination room with patient comfort in mind',
+            description: 'fghlkjfhkfj',
             selected: false,
             timeSlot: 'full'
         },
@@ -211,10 +211,10 @@ const BookingOptions = () => {
 
                     {/* Room Selection */}
                     <div className="mb-16">
-                        <h2 className="text-3xl font-semibold mb-8 text-gray-800">Select Room(s)</h2>
+                        <h2 className="text-3xl font-semibold  mb-8 text-gray-800">Select Room(s)</h2>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             {rooms.map(room => (
-                                <div key={room.id} className="relative rounded-xl overflow-hidden border-2 transition-all duration-300 transform hover:scale-105">
+                                <div key={room.id} className="relative rounded-xl  overflow-hidden border-2 transition-all duration-300 transform hover:scale-105">
                                     <div
                                         onClick={() => handleRoomSelect(room.id)}
                                         className={`cursor-pointer ${room.selected
@@ -237,8 +237,8 @@ const BookingOptions = () => {
                                             )}
                                         </div>
                                         <div className="p-6">
-                                            <h3 className="text-xl font-semibold mb-2">{room.name}</h3>
-                                            <p className="text-gray-600">{room.description}</p>
+                                            <h3 className="text-2xl text-center font-semibold mb-2">{room.name}</h3>
+                                            {/* <p className="text-gray-600">{room.description}</p> */}
                                         </div>
                                     </div>
                                 </div>
