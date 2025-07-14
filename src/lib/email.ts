@@ -85,20 +85,20 @@ if (process.env.NODE_ENV !== 'test') {
 export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ success: boolean; error?: string; details?: any }> => {
     let lastError;
     const startTime = Date.now();
-    
+
     // Helper function to create timeout promise
     const withTimeout = (promise: Promise<any>, ms: number) => {
-        const timeout = new Promise((_, reject) => 
+        const timeout = new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`Email sending timed out after ${ms}ms`)), ms)
         );
         return Promise.race([promise, timeout]);
     };
-    
+
     for (let attempt = 1; attempt <= retryCount; attempt++) {
         const attemptStartTime = Date.now();
         try {
             console.log(`Sending email attempt ${attempt}/${retryCount} to ${config.to}`);
-            
+
             const mailOptions = {
                 from: `"Hire a Clinic" <${process.env.EMAIL_FROM}>`,
                 to: config.to,
@@ -126,7 +126,7 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
             const info = await withTimeout(transporter.sendMail(mailOptions), 10000);
             const attemptDuration = Date.now() - attemptStartTime;
             const totalDuration = Date.now() - startTime;
-            
+
             console.log(`[${new Date().toISOString()}] Email sent successfully in ${attemptDuration}ms (total ${totalDuration}ms):`, {
                 messageId: info.messageId,
                 accepted: info.accepted,
@@ -134,8 +134,8 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
                 pending: info.pending,
                 response: info.response
             });
-            
-            return { 
+
+            return {
                 success: true,
                 details: {
                     messageId: info.messageId,
@@ -144,11 +144,11 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
                     attemptNumber: attempt
                 }
             };
-            
+
         } catch (error) {
             lastError = error;
             console.error(`Attempt ${attempt} failed:`, error);
-            
+
             // If it's the last attempt, don't wait
             if (attempt < retryCount) {
                 // Exponential backoff: 1s, 2s, 4s, etc.
@@ -158,7 +158,7 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
             }
         }
     }
-    
+
     // If we get here, all attempts failed
     console.error(`Failed to send email after ${retryCount} attempts`, lastError);
     const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error';
@@ -172,9 +172,9 @@ export const sendEmail = async (config: EmailConfig, retryCount = 3): Promise<{ 
             stack: lastError.stack
         } : lastError
     });
-    
-    return { 
-        success: false, 
+
+    return {
+        success: false,
         error: errorMessage,
         details: lastError
     };
@@ -250,17 +250,7 @@ export const getBookingConfirmationEmail = (booking: {
                         </table>
                     </div>
 
-                    <div style="margin: 20px 0; padding: 20px; background-color: #e5e7eb; border-radius: 4px;">
-                        <h3 style="margin: 0;">Important Information</h3>
-                        <ul style="margin: 10px 0;">
-                            <li>Please arrive 15 minutes before your scheduled time</li>
-                            <li>Bring a valid ID for verification</li>
-                            <li>Follow all clinic safety protocols</li>
-                            <li>Keep this confirmation for your records</li>
-                        </ul>
-                    </div>
-
-                    <p style="margin-top: 20px;">If you have any questions, please don't hesitate to contact us.</p>
+                    <p style="margin-top: 22px; font-style: italic; font-weight: bold;">If you have any questions, please don't hesitate to contact us.</p>
                     <p style="margin-bottom: 0;">Best regards,<br>Hire A Clinic Team</p>
                 </div>
             </div>
@@ -405,7 +395,7 @@ export async function sendVerificationEmail(
 
     try {
         const verificationUrl = `${requiredVars.NEXT_PUBLIC_APP_URL}/verify-email?token=${encodeURIComponent(token)}`;
-        
+
         const emailContent = {
             to,
             subject: 'Verify Your Email Address',
@@ -444,9 +434,9 @@ export async function sendVerificationEmail(
         if (!result.success) {
             throw new Error(result.error || 'Failed to send verification email');
         }
-        
+
         return { success: true };
-        
+
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Failed to send verification email';
         console.error('Error in sendVerificationEmail:', errorMsg);
