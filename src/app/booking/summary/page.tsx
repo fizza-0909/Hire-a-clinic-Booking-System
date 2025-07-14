@@ -157,6 +157,107 @@ const handleBookingTypeChange = async (type: BookingType, selectedRooms: Booking
     setBookingType(type);
 };
 
+// TermsModal for summary page
+interface TermsModalProps {
+    open: boolean;
+    onClose: () => void;
+}
+function TermsModal({ open, onClose }: TermsModalProps) {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 relative" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+                <h2 className="text-xl font-bold mb-4 text-center">Medical Office Use Agreement & Terms of Use</h2>
+                <div className="text-sm text-gray-700 space-y-4">
+                    <p>This Agreement is made and entered into by and between <strong>Hire a Clinic</strong>, a (name of legal entity type – e.g., LLC, PLLC) ("Licensor"), and the undersigned individual or entity ("Licensee" or "Booking Party").</p>
+                    <p>By booking, reserving, or using a medical office suite or space through Hire a Clinic, the Licensee agrees to be bound by the terms below.</p>
+                    <h3 className="font-semibold mt-4">1. LICENSE TO USE PREMISES</h3>
+                    <p><strong>1.1. Non-Exclusive License.</strong> Licensor grants Licensee a limited, revocable, non-transferable license to use specified medical office space at designated times, for lawful professional purposes only.</p>
+                    <p><strong>1.2. No Lease or Tenancy Created.</strong> This Agreement is not a lease. It does not create a landlord-tenant relationship. It is a license for temporary use of space.</p>
+                    <h3 className="font-semibold mt-4">2. LICENSEE REPRESENTATIONS & REQUIREMENTS</h3>
+                    <p><strong>2.1. Licensee affirms that they are:</strong></p>
+                    <ul className="list-disc pl-5">
+                        <li>A duly licensed and credentialed healthcare provider;</li>
+                        <li>Authorized to provide care in the jurisdiction where the office is located;</li>
+                        <li>Carrying all required professional liability (malpractice) insurance and general liability insurance, and will provide proof upon request.</li>
+                    </ul>
+                    <p><strong>2.2. Licensee is fully responsible for:</strong></p>
+                    <ul className="list-disc pl-5">
+                        <li>Their own patients, services rendered, and compliance with all local, state, and federal laws (including HIPAA);</li>
+                        <li>Bringing, securing, and maintaining their own medical records, forms, and supplies;</li>
+                        <li>Ensuring they do not prescribe, store, or dispense controlled substances on the premises without proper licensing and safeguards.</li>
+                    </ul>
+                    <h3 className="font-semibold mt-4">3. USE OF PREMISES</h3>
+                    <p><strong>3.1.</strong> Licensee shall use the premises only for consultations, evaluations, and services within the scope of their professional license.</p>
+                    <p><strong>3.2.</strong> Licensee shall not:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Alter, damage, or misuse the premises;</li>
+                        <li>Conduct any illegal or unethical activity;</li>
+                        <li>Solicit patients or staff of Hire a Clinic for unrelated business;</li>
+                        <li>Leave personal items unattended or overnight unless explicitly permitted.</li>
+                    </ul>
+                    <p><strong>3.3.</strong> Shared amenities (e.g., waiting room, Wi-Fi, front desk, cleaning) are provided “as-is” and subject to availability.</p>
+                    <h3 className="font-semibold mt-4">4. NO ENDORSEMENT OR SUPERVISION</h3>
+                    <p><strong>4.1.</strong> Licensor does not supervise, endorse, or participate in the medical care provided by Licensee.</p>
+                    <p><strong>4.2.</strong> Licensee acts entirely independently, and no employment, agency, or partnership is created by this agreement.</p>
+                    <h3 className="font-semibold mt-4">5. FEES & PAYMENTS</h3>
+                    <p><strong>5.1.</strong> Fees for room use are due at the time of booking and are non-refundable.</p>
+                    <h3 className="font-semibold mt-4">6. INDEMNIFICATION & LIABILITY WAIVER</h3>
+                    <p><strong>6.1.</strong> Licensee shall indemnify, defend, and hold harmless Hire a Clinic, its owners, officers, employees, and affiliates from:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Any claims, demands, damages, lawsuits, or liabilities arising out of or related to Licensee’s use of the premises;</li>
+                        <li>Any malpractice claims, patient complaints, or injuries occurring during or after Licensee’s use of the space;</li>
+                        <li>Any violations of law or professional regulations by Licensee.</li>
+                    </ul>
+                    <p><strong>6.2.</strong> Licensor shall not be liable for:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Any damages to personal property;</li>
+                        <li>Business interruptions;</li>
+                        <li>Lost income, reputational harm, or indirect damages.</li>
+                    </ul>
+                    <h3 className="font-semibold mt-4">7. INSURANCE REQUIREMENTS</h3>
+                    <p>Licensee agrees to carry and maintain:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Professional liability insurance with a minimum coverage of $1,000,000 per incident;</li>
+                        <li>General liability insurance covering premises use;</li>
+                        <li>Any other insurance required by applicable law.</li>
+                    </ul>
+                    <p>Proof of insurance must be furnished upon request.</p>
+                    <h3 className="font-semibold mt-4">8. TERMINATION</h3>
+                    <p><strong>8.1.</strong> Licensor reserves the right to revoke access or cancel any booking at its sole discretion for:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Breach of this Agreement;</li>
+                        <li>Unethical conduct;</li>
+                        <li>Risk to property, staff, or patients.</li>
+                    </ul>
+                    <p><strong>8.2.</strong> Any violations may result in permanent banning from using Hire a Clinic services.</p>
+                    <h3 className="font-semibold mt-4">9. DISPUTES & GOVERNING LAW</h3>
+                    <p><strong>9.1.</strong> This Agreement is governed by the laws of the State of <strong>[Insert State]</strong>.</p>
+                    <p><strong>9.2.</strong> All disputes shall be resolved through binding arbitration in <strong>[Insert County/City]</strong>, and not through court litigation.</p>
+                    <p><strong>9.3.</strong> Attorneys’ fees and costs incurred by Hire a Clinic to enforce this agreement may be recoverable.</p>
+                    <h3 className="font-semibold mt-4">10. MISCELLANEOUS</h3>
+                    <ul className="list-disc pl-5">
+                        <li><strong>Entire Agreement:</strong> This document represents the full agreement between the parties.</li>
+                        <li><strong>No Waiver:</strong> Failure to enforce any provision does not waive future enforcement.</li>
+                        <li><strong>Severability:</strong> If any provision is found unenforceable, the rest remains in effect.</li>
+                        <li><strong>Electronic Acceptance:</strong> Use of the space constitutes agreement to these terms. A digital or physical signature is enforceable.</li>
+                    </ul>
+                    <hr className="my-4" />
+                    <p className="text-center font-semibold">By clicking “I Agree”, you acknowledge that you have read, understood, and agree to all terms of this Medical Office Use Agreement.</p>
+                </div>
+                <div className="flex justify-center mt-6">
+                    <button
+                        className="px-6 py-2 rounded bg-blue-600 text-white font-semibold"
+                        onClick={onClose}
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 const SummaryPage = () => {
     const router = useRouter();
     const { data: session, status } = useSession();
@@ -172,6 +273,7 @@ const SummaryPage = () => {
     });
     const [bookingData, setBookingData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [showTermsModal, setShowTermsModal] = useState(false);
 
     useEffect(() => {
         if (status === 'loading') return;
@@ -520,28 +622,28 @@ const SummaryPage = () => {
                         {/* Terms and Conditions Section */}
                         <div className="border-t border-gray-200 pt-6 mb-8">
                             <h2 className="text-xl font-semibold mb-4">Terms and Conditions</h2>
-                            <div className="space-y-3 text-sm text-gray-700 mb-6">
-                                <p className="mb-2">• Payments are non-refundable. Only the membership fee is refundable as per policy.</p>
-                                <p className="mb-2">• Renters are responsible for the equipment and space during their booked time slot.</p>
-                                <p className="mb-2">• Clinic owners must maintain a safe and professional environment.</p>
-                                <p className="mb-2">• Renters must respect booking times. If a renter arrives late, extra time will not be provided or compensated.</p>
-                                <p className="mb-2">• Any damages or misuse of the clinic will be deducted from the security deposit.</p>
-                                <p className="mb-2">• All users must follow platform policies regarding cancellations and conduct.</p>
-                            </div>
 
                             {/* Terms Acceptance Checkbox */}
-                            <div className="flex items-start space-x-3 mb-6">
+                            <div className="flex items-center mt-6">
                                 <input
+                                    id="terms-checkbox"
                                     type="checkbox"
-                                    id="acceptTerms"
                                     checked={acceptedTerms}
-                                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                                    className="mt-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                    onChange={e => setAcceptedTerms(e.target.checked)}
+                                    className="mr-2"
+                                    required
                                 />
-                                <label htmlFor="acceptTerms" className="text-sm text-gray-700">
-                                    By confirming this booking, I acknowledge that I have read and agree to all the above Terms and Conditions.
+                                <label htmlFor="terms-checkbox" className="text-sm">
+                                    By clicking "I Agree", I confirm acceptance of the Medical Office Use {' '}
+                                    <span
+                                        className="text-blue-600 underline cursor-pointer"
+                                        onClick={() => setShowTermsModal(true)}
+                                    >
+                                        Terms and Conditions
+                                    </span>
                                 </label>
                             </div>
+                            <TermsModal open={showTermsModal} onClose={() => setShowTermsModal(false)} />
                         </div>
 
                         <div className="mt-8">
