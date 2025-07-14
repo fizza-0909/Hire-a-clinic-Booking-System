@@ -16,7 +16,17 @@ const Header: React.FC = () => {
     };
 
     if (!session) {
-        return null;
+        // Show simple header for not logged in users
+        return (
+            <header className="bg-white shadow-sm">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between h-16 items-center">
+                        <Link href="https://hireaclinic.com/" className="text-2xl font-bold text-blue-600">Hire a Clinic</Link>
+                        <Link href="/login" className="text-blue-600 font-semibold hover:underline">Login</Link>
+                    </div>
+                </div>
+            </header>
+        );
     }
 
     return (

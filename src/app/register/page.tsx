@@ -253,9 +253,9 @@ export default function Register() {
         <div className="min-h-screen bg-gray-50">
             <Header />
             <TermsModal open={showTermsModal} onClose={() => setShowTermsModal(false)} onAccept={handleAcceptTerms} />
-            <div className="flex items-center justify-center min-h-screen pt-24">
+            <div className="flex items-center justify-center min-h-screen pt-8">
                 <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-                    <h2 className="text-2xl font-bold text-center mb-8">Create an Account</h2>
+                    <h2 className="text-2xl font-bold mb-8 text-center">REGISTRATION FORM</h2>
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="grid grid-cols-2 gap-4">
                             <div>

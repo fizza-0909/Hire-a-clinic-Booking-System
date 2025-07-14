@@ -29,7 +29,7 @@ function LoginForm() {
         e.preventDefault();
         setIsLoading(true);
         const loadingToast = toast.loading('Signing in...');
-        
+
         try {
             console.log('Attempting to sign in with email:', formData.email);
             const result = await signIn('credentials', {
@@ -40,11 +40,11 @@ function LoginForm() {
             });
 
             console.log('Sign in result:', result);
-            
+
             if (result?.error) {
                 toast.dismiss(loadingToast);
                 console.error('Login error:', result.error);
-                
+
                 // Check if the error is due to unverified email
                 if (result.error === 'Please verify your email before logging in') {
                     toast.error('Please verify your email before logging in');
@@ -81,7 +81,7 @@ function LoginForm() {
             {/* Header */}
             <header className="bg-white shadow-sm">
                 <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-                    <h1 className="text-2xl font-semibold text-gray-900">Hire a Clinic</h1>
+                    <h1 className="text-2xl font-bold text-blue-600">Hire a Clinic</h1>
                 </div>
             </header>
 
