@@ -243,7 +243,9 @@ function TermsModal({ open, onClose }: TermsModalProps) {
                         <li><strong>Electronic Acceptance:</strong> Use of the space constitutes agreement to these terms. A digital or physical signature is enforceable.</li>
                     </ul>
                     <hr className="my-4" />
-                    <p className="text-center font-semibold">By clicking “I Agree”, you acknowledge that you have read, understood, and agree to all terms of this Medical Office Use Agreement.</p>
+                    <p className="text-center font-semibold"><p>
+
+                    </p> By clicking <strong>“I Agree”,</strong> registering or booking a room, you acknowledge and agree that your submission serves as your consent and signature to comply with all applicable rules, policies, and regulations.</p>
                 </div>
                 <div className="flex justify-center mt-6">
                     <button
@@ -618,59 +620,60 @@ const SummaryPage = () => {
                                 </div>
                             </div>
                         </div>
+                    </div>
 
-                        {/* Terms and Conditions Section */}
-                        <div className="border-t border-gray-200 pt-6 mb-8">
-                            <h2 className="text-xl font-semibold mb-4">Terms and Conditions</h2>
+                    {/* Terms and Conditions Section */}
+                    <div className="border-t border-gray-200 pt-6 mb-8">
+                        <h2 className="text-xl font-semibold mb-4">Terms and Conditions</h2>
 
-                            {/* Terms Acceptance Checkbox */}
-                            <div className="flex items-center mt-6">
-                                <input
-                                    id="terms-checkbox"
-                                    type="checkbox"
-                                    checked={acceptedTerms}
-                                    onChange={e => setAcceptedTerms(e.target.checked)}
-                                    className="mr-2"
-                                    required
-                                />
-                                <label htmlFor="terms-checkbox" className="text-sm">
-                                    By clicking "I Agree", I confirm acceptance of the Medical Office Use {' '}
-                                    <span
-                                        className="text-blue-600 underline cursor-pointer"
-                                        onClick={() => setShowTermsModal(true)}
-                                    >
-                                        Terms and Conditions
-                                    </span>
-                                </label>
-                            </div>
-                            <TermsModal open={showTermsModal} onClose={() => setShowTermsModal(false)} />
+                        {/* Terms Acceptance Checkbox */}
+                        <div className="flex items-center mt-6">
+                            <input
+                                id="terms-checkbox"
+                                type="checkbox"
+                                checked={acceptedTerms}
+                                onChange={e => setAcceptedTerms(e.target.checked)}
+                                className="mr-2"
+                                required
+                            />
+                            <label htmlFor="terms-checkbox" className="text-sm">
+                                By clicking "I Agree", I confirm acceptance of the Medical Office Use {' '}
+                                <span
+                                    className="text-blue-600 underline cursor-pointer"
+                                    onClick={() => setShowTermsModal(true)}
+                                >
+                                    Terms and Conditions
+                                </span>
+
+                            </label>
                         </div>
+                        <TermsModal open={showTermsModal} onClose={() => setShowTermsModal(false)} />
+                    </div>
 
-                        <div className="mt-8">
-                            <button
-                                onClick={handleProceedToPayment}
-                                disabled={isProcessing || !acceptedTerms}
-                                className={`w-full flex items-center justify-center py-4 px-6 rounded-lg text-white font-medium 
+                    <div className="mt-8">
+                        <button
+                            onClick={handleProceedToPayment}
+                            disabled={isProcessing || !acceptedTerms}
+                            className={`w-full flex items-center justify-center py-4 px-6 rounded-lg text-white font-medium 
                                     ${(isProcessing || !acceptedTerms) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} 
                                     transition-colors duration-200`}
-                            >
-                                {isProcessing ? (
-                                    <>
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Processing...
-                                    </>
-                                ) : (
-                                    'Proceed to Payment'
-                                )}
-                            </button>
-                        </div>
+                        >
+                            {isProcessing ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Processing...
+                                </>
+                            ) : (
+                                'Proceed to Payment'
+                            )}
+                        </button>
                     </div>
                 </div>
-            </main>
-        </div>
+            </main >
+        </div >
     );
 };
 

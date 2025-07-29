@@ -95,7 +95,7 @@ function TermsModal({ open, onClose, onAccept }: TermsModalProps) {
                         <li><strong>Electronic Acceptance:</strong> Use of the space constitutes agreement to these terms. A digital or physical signature is enforceable.</li>
                     </ul>
                     <hr className="my-4" />
-                    <p className="text-center font-semibold">By clicking “I Agree”, you acknowledge that you have read, understood, and agree to all terms of this Medical Office Use Agreement.</p>
+                    <p className="text-center font-semibold"> By clicking “I Agree”, registering or booking a room, you acknowledge and agree that your submission serves as your consent and signature to comply with all applicable rules, policies, and regulations.</p>
                 </div>
                 <div className="flex items-center mt-6 mb-4 justify-center">
                     <input
