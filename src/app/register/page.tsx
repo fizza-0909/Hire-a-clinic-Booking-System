@@ -21,8 +21,8 @@ function TermsModal({ open, onClose, onAccept }: TermsModalProps) {
             <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 relative" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
                 <h2 className="text-xl font-bold mb-4 text-center">Medical Office Use Agreement & Terms of Use</h2>
                 <div className="text-sm text-gray-700 space-y-4">
-                    <p>This Agreement is made and entered into by and between <strong>Hire a Clinic</strong>, a (name of legal entity type – e.g., LLC, PLLC) ("Licensor"), and the undersigned individual or entity ("Licensee" or "Booking Party").</p>
-                    <p>By booking, reserving, or using a medical office suite or space through Hire a Clinic, the Licensee agrees to be bound by the terms below.</p>
+                    {/* <p>This Agreement is made and entered into by and between <strong>Hire a Clinic</strong>, a (name of legal entity type – e.g., LLC, PLLC) ("Licensor"), and the undersigned individual or entity ("Licensee" or "Booking Party").</p> */}
+                    <p>By booking, reserving, or using a medical office suite or space through <strong>Hire a Clinic</strong>, the Licensee agrees to be bound by the terms below.</p>
                     <h3 className="font-semibold mt-4">1. LICENSE TO USE PREMISES</h3>
                     <p><strong>1.1. Non-Exclusive License.</strong> Licensor grants Licensee a limited, revocable, non-transferable license to use specified medical office space at designated times, for lawful professional purposes only.</p>
                     <p><strong>1.2. No Lease or Tenancy Created.</strong> This Agreement is not a lease. It does not create a landlord-tenant relationship. It is a license for temporary use of space.</p>
@@ -84,9 +84,9 @@ function TermsModal({ open, onClose, onAccept }: TermsModalProps) {
                     </ul>
                     <p><strong>8.2.</strong> Any violations may result in permanent banning from using Hire a Clinic services.</p>
                     <h3 className="font-semibold mt-4">9. DISPUTES & GOVERNING LAW</h3>
-                    <p><strong>9.1.</strong> This Agreement is governed by the laws of the State of <strong>[Insert State]</strong>.</p>
-                    <p><strong>9.2.</strong> All disputes shall be resolved through binding arbitration in <strong>[Insert County/City]</strong>, and not through court litigation.</p>
-                    <p><strong>9.3.</strong> Attorneys’ fees and costs incurred by Hire a Clinic to enforce this agreement may be recoverable.</p>
+                    <p><strong>9.1.</strong> This Agreement is governed by the laws of the State of <strong>Texas</strong>.</p>
+                    {/* <p><strong>9.2.</strong> All disputes shall be resolved through binding arbitration in <strong>Collin County,Texas</strong>, and not through court litigation.</p> */}
+                    <p><strong>9.2.</strong> Attorneys’ fees and costs incurred by Hire a Clinic to enforce this agreement may be recoverable.</p>
                     <h3 className="font-semibold mt-4">10. MISCELLANEOUS</h3>
                     <ul className="list-disc pl-5">
                         <li><strong>Entire Agreement:</strong> This document represents the full agreement between the parties.</li>
