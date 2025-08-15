@@ -25,7 +25,7 @@ const BookingOptions = () => {
     const [rooms, setRooms] = useState<Room[]>([
         {
             id: 1,
-            name: 'Room 1',
+            name: 'Exam Room 1',
             image: '/images/room1.png',
             description: 'Spacious consultation room with modern medical equipment',
             selected: false,
@@ -33,7 +33,7 @@ const BookingOptions = () => {
         },
         {
             id: 2,
-            name: 'Room 2',
+            name: 'Exam Room 2',
             image: '/images/room2.png',
             description: 'fghlkjfhkfj',
             selected: false,
@@ -41,7 +41,15 @@ const BookingOptions = () => {
         },
         {
             id: 3,
-            name: 'Room 3',
+            name: 'Exam Room 3',
+            image: '/images/room3.png',
+            description: 'Private consultation space with state-of-the-art facilities',
+            selected: false,
+            timeSlot: 'full'
+        },
+        {
+            id: 4,
+            name: 'Procedure Room',
             image: '/images/room3.png',
             description: 'Private consultation space with state-of-the-art facilities',
             selected: false,
@@ -185,7 +193,7 @@ const BookingOptions = () => {
                                 </div>
                             </button>
 
-                            <button
+                            {/* <button
                                 onClick={() => handleBookingTypeChange('monthly')}
                                 className={`p-8 rounded-xl border-2 transition-all duration-300 transform hover:scale-105 ${selectedOption === 'monthly'
                                     ? 'border-blue-500 bg-blue-50 shadow-lg'
@@ -205,7 +213,7 @@ const BookingOptions = () => {
                                         Half Day: $1200/room/month
                                     </div>
                                 </div>
-                            </button>
+                            </button> */}
                         </div>
                     </div>
 
