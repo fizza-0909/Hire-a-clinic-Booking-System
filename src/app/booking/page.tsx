@@ -25,7 +25,7 @@ const BookingOptions = () => {
     const [rooms, setRooms] = useState<Room[]>([
         {
             id: 1,
-            name: 'Room 1',
+            name: 'Exam Room 1',
             image: '/images/room1.png',
             description: 'Spacious consultation room with modern medical equipment',
             selected: false,
@@ -33,7 +33,7 @@ const BookingOptions = () => {
         },
         {
             id: 2,
-            name: 'Room 2',
+            name: 'Exam Room 2',
             image: '/images/room2.png',
             description: 'fghlkjfhkfj',
             selected: false,
@@ -41,7 +41,7 @@ const BookingOptions = () => {
         },
         {
             id: 3,
-            name: 'Room 3',
+            name: 'Exam Room 3',
             image: '/images/room3.png',
             description: 'Private consultation space with state-of-the-art facilities',
             selected: false,
@@ -49,7 +49,7 @@ const BookingOptions = () => {
         },
         {
             id: 4,
-            name: 'Precedure Room',
+            name: 'Procedure Room',
             image: '/images/room3.png',
             description: 'Private consultation space with state-of-the-art facilities',
             selected: false,
