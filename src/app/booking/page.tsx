@@ -46,14 +46,6 @@ const BookingOptions = () => {
             description: 'Private consultation space with state-of-the-art facilities',
             selected: false,
             timeSlot: 'full'
-        },
-        {
-            id: 4,
-            name: 'Procedure Room',
-            image: '/images/room3.png',
-            description: 'Private consultation space with state-of-the-art facilities',
-            selected: false,
-            timeSlot: 'full'
         }
     ]);
 
