@@ -416,6 +416,15 @@ const CalendarPage: React.FC = () => {
         return total;
     };
 
+    const getterRoom = () => {
+        if (typeof window !== 'undefined') {
+            const storedRoom = sessionStorage.getItem('selectedRooms');
+            const parseRoom = storedRoom ? JSON.parse(storedRoom) : {};
+            return parseRoom[0].id === 4;
+        }
+        return false;
+    };
+
     const getTimeSlotText = (timeSlot: TimeSlot): string => {
         switch (timeSlot) {
             case 'full':
@@ -833,7 +842,7 @@ const CalendarPage: React.FC = () => {
                     )}
                 </div>
 
-                <button
+                {getterRoom()?<button
                     onClick={() => {
                         setShowHalfDayOptions(true);
                         handleTimeSlotChange(room.id, 'morning');
@@ -851,7 +860,7 @@ const CalendarPage: React.FC = () => {
                             ${PRICING[bookingType].morning}/{bookingType === 'daily' ? 'day' : 'month'}
                         </div>
                     </div>
-                </button>
+                </button>:""}
             </div>
         );
     };

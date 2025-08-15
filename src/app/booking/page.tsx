@@ -46,6 +46,14 @@ const BookingOptions = () => {
             description: 'Private consultation space with state-of-the-art facilities',
             selected: false,
             timeSlot: 'full'
+        },
+        {
+            id: 4,
+            name: 'Precedure Room',
+            image: '/images/room3.png',
+            description: 'Private consultation space with state-of-the-art facilities',
+            selected: false,
+            timeSlot: 'full'
         }
     ]);
 
@@ -185,7 +193,7 @@ const BookingOptions = () => {
                                 </div>
                             </button>
 
-                            <button
+                            {/* <button
                                 onClick={() => handleBookingTypeChange('monthly')}
                                 className={`p-8 rounded-xl border-2 transition-all duration-300 transform hover:scale-105 ${selectedOption === 'monthly'
                                     ? 'border-blue-500 bg-blue-50 shadow-lg'
@@ -205,7 +213,7 @@ const BookingOptions = () => {
                                         Half Day: $1200/room/month
                                     </div>
                                 </div>
-                            </button>
+                            </button> */}
                         </div>
                     </div>
 
