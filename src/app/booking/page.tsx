@@ -16,6 +16,18 @@ interface Room {
     description: string;
     selected: boolean;
     timeSlot: TimeSlot;
+    customPricing?: {
+        daily: {
+            full: number;
+            morning: number;
+            evening: number;
+        };
+        monthly: {
+            full: number;
+            morning: number;
+            evening: number;
+        };
+    };
 }
 
 const BookingOptions = () => {
@@ -29,7 +41,7 @@ const BookingOptions = () => {
             image: '/images/room1.png',
             description: 'Spacious consultation room with modern medical equipment',
             selected: false,
-            timeSlot: 'full'
+            timeSlot: 'full',
         },
         {
             id: 2,
@@ -37,7 +49,7 @@ const BookingOptions = () => {
             image: '/images/room2.png',
             description: 'fghlkjfhkfj',
             selected: false,
-            timeSlot: 'full'
+            timeSlot: 'full',
         },
         {
             id: 3,
@@ -45,7 +57,27 @@ const BookingOptions = () => {
             image: '/images/room3.png',
             description: 'Private consultation space with state-of-the-art facilities',
             selected: false,
-            timeSlot: 'full'
+            timeSlot: 'full',
+        },
+        {
+            id: 4,
+            name: 'Procedure Room',
+            image: '/images/room3.png',
+            description: 'Private consultation space with state-of-the-art facilities',
+            selected: false,
+            timeSlot: 'full',
+            customPricing: {
+                daily: {
+                    full: 400,
+                    morning: 200,
+                    evening: 200
+                },
+                monthly: {
+                    full: 2500,
+                    morning: 1500,
+                    evening: 1500
+                }
+            }
         }
     ]);
 

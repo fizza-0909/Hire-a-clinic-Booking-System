@@ -27,6 +27,7 @@ import {
 
 interface StoredRoomBooking extends Omit<RoomBooking, 'dates'> {
     dates: string[];
+    customPricing?: typeof PRICING;
 }
 
 interface UserData {
@@ -74,7 +75,21 @@ const CalendarPage: React.FC = () => {
 
         try {
             const parsedRooms = JSON.parse(storedRooms);
-            setSelectedRooms(parsedRooms);
+            // Ensure custom pricing for Room 3 if missing (backward compatibility)
+            const normalizedRooms = parsedRooms.map((r: any) => (
+                r && Number(r.id) === 4 && !r.customPricing
+                    ? {
+                        ...r,
+                        customPricing: {
+                            daily: { full: 400, morning: 200, evening: 200 },
+                            monthly: { full: 2500, morning: 1500, evening: 1500 },
+                            securityDeposit: 250,
+                            taxRate: 0.035
+                        }
+                    }
+                    : r
+            ));
+            setSelectedRooms(normalizedRooms);
             setBookingType(storedBookingType as BookingType);
         } catch (error) {
             console.error('Error parsing stored data:', error);
@@ -202,27 +217,7 @@ const CalendarPage: React.FC = () => {
         }
     };
 
-    const handleRoomSelection = (room: Room) => {
-        setSelectedRooms(prev => {
-            const isSelected = prev.some(r => r.id.toString() === room.id);
-            if (isSelected) {
-                toast.error('Room deselected');
-                return prev.filter(r => r.id.toString() !== room.id);
-            } else {
-                toast.success('Room selected');
-                return [...prev, {
-                    id: parseInt(room.id),
-                    roomId: room.id,
-                    name: room.name,
-                    image: room.image,
-                    description: room.description,
-                    selected: true,
-                    timeSlot: 'full',
-                    dates: []
-                }];
-            }
-        });
-    };
+    
 
     const handleDateSelection = (date: Date, roomId: number) => {
         if (isDateInPast(date)) {
@@ -403,9 +398,8 @@ const CalendarPage: React.FC = () => {
     const calculateTotalAmount = (rooms: RoomBooking[]) => {
         let total = 0;
         rooms.forEach(room => {
-            const basePrice = room.timeSlot === 'full' 
-                ? PRICING[bookingType].full 
-                : PRICING[bookingType][room.timeSlot];
+            const pricing = (room as StoredRoomBooking).customPricing ?? PRICING;
+            const basePrice = pricing[bookingType][room.timeSlot];
             // For monthly bookings, use flat rate. For daily, multiply by days
             if (bookingType === 'monthly') {
                 total += basePrice; // Flat monthly rate
@@ -494,9 +488,8 @@ const CalendarPage: React.FC = () => {
 
         // Calculate price for each room
         selectedRooms.forEach(room => {
-            const basePrice = room.timeSlot === 'full' 
-                ? PRICING[bookingType].full 
-                : PRICING[bookingType][room.timeSlot];
+            const pricing = (room as StoredRoomBooking).customPricing ?? PRICING;
+            const basePrice = pricing[bookingType][room.timeSlot];
             
             // For monthly bookings, use flat rate. For daily, multiply by days
             if (bookingType === 'monthly') {
@@ -776,7 +769,7 @@ const CalendarPage: React.FC = () => {
         }
     };
 
-    const renderTimeSlotButtons = (room: RoomBooking) => {
+    const renderTimeSlotButtons = (room: StoredRoomBooking) => {
         // Check for dates that would conflict with full day booking
         const conflictingDates = room.dates?.filter(dateStr => {
             const date = new Date(dateStr);
@@ -810,7 +803,7 @@ const CalendarPage: React.FC = () => {
                             <h3 className="font-semibold text-xl mb-2">Full Day</h3>
                             <p className="text-gray-600">8:00 AM - 5:00 PM</p>
                             <div className="text-blue-600 font-bold mt-2">
-                                ${PRICING[bookingType].full}/{bookingType === 'daily' ? 'day' : 'month'}
+                                ${(room.customPricing ?? PRICING)[bookingType]?.full}/{bookingType === 'daily' ? 'day' : 'month'}
                             </div>
                             {hasConflictingDates && (
                                 <div className="mt-3 p-2 bg-red-100 rounded-lg border border-red-200 text-red-600 text-sm font-medium">
@@ -842,7 +835,7 @@ const CalendarPage: React.FC = () => {
                     )}
                 </div>
 
-                {getterRoom()?<button
+                {room.id == 4?<button
                     onClick={() => {
                         setShowHalfDayOptions(true);
                         handleTimeSlotChange(room.id, 'morning');
@@ -857,7 +850,7 @@ const CalendarPage: React.FC = () => {
                         <h3 className="font-semibold text-xl mb-2">Half Day</h3>
                         <p className="text-gray-600">Morning or Evening</p>
                         <div className="text-blue-600 font-bold mt-2">
-                            ${PRICING[bookingType].morning}/{bookingType === 'daily' ? 'day' : 'month'}
+                            ${(room.customPricing ?? PRICING)[bookingType].morning}/{bookingType === 'daily' ? 'day' : 'month'}
                         </div>
                     </div>
                 </button>:""}
@@ -1126,7 +1119,7 @@ const CalendarPage: React.FC = () => {
                                                                 {room.timeSlot === 'full' ? 'Full Day' : room.timeSlot === 'morning' ? 'Morning' : 'Evening'}
                                                             </div>
                                                             <div className="text-sm text-blue-600">
-                                                                ${PRICING[bookingType][room.timeSlot]}/{bookingType === 'daily' ? 'day' : 'month'}
+                                                                ${(room.customPricing ?? PRICING)[bookingType][room.timeSlot]}/{bookingType === 'daily' ? 'day' : 'month'}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1167,7 +1160,12 @@ const CalendarPage: React.FC = () => {
                                     <div className="space-y-3">
                                         <div className="flex justify-between items-center text-sm text-gray-600">
                                             <span>Price per room:</span>
-                                            <span>${PRICING[bookingType][selectedRooms[0]?.timeSlot || 'full']}/{bookingType === 'daily' ? 'day' : 'month'}</span>
+                                            {/* <span>${PRICING[bookingType][selectedRooms[0]?.timeSlot || 'full']}/{bookingType === 'daily' ? 'day' : 'month'}</span> */}
+                                            {selectedRooms.map((room) => (
+                                                <span key={room.id} className="flex justify-between items-center text-sm text-gray-600">
+                                                    ${(room.customPricing ?? PRICING)[bookingType][room.timeSlot]}/{bookingType === 'daily' ? 'day' : 'month'}
+                                                </span>
+                                            ))}
                                         </div>
                                         <div className="flex justify-between items-center text-sm text-gray-600">
                                             <span>Number of rooms with dates:</span>
