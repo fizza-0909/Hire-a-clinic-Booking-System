@@ -835,7 +835,7 @@ const CalendarPage: React.FC = () => {
                     )}
                 </div>
 
-                {room.id == 4?<button
+                {room.id == 4 ? <button
                     onClick={() => {
                         setShowHalfDayOptions(true);
                         handleTimeSlotChange(room.id, 'morning');
