@@ -25,27 +25,28 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 const calculatePriceBreakdown = (rooms: BookingRoom[], bookingType: BookingType, isVerified: boolean): PriceBreakdown => {
     let subtotal = 0;
 
-    // Calculate price for each room
-    rooms.forEach(room => {
-        const basePrice = room.timeSlot === 'full'
-            ? PRICING[bookingType].full
-            : PRICING[bookingType][room.timeSlot];
 
-        // For monthly bookings, use flat rate. For daily, multiply by days
-        if (bookingType === 'monthly') {
-            subtotal += basePrice; // Flat monthly rate
+    rooms.forEach(room => {
+        let basePrice;
+        if (room?.customPricing && room?.customPricing[bookingType]) {
+            basePrice = room?.customPricing[bookingType][room.timeSlot];
         } else {
-            subtotal += basePrice * room.dates.length; // Daily rate * number of days
+            basePrice = PRICING[bookingType][room.timeSlot];
+        }
+
+
+        if (bookingType === 'monthly') {
+            subtotal += basePrice;
+        } else {
+            subtotal += basePrice * room.dates.length;
         }
     });
 
-    // Calculate tax (3.5%)
-    const tax = subtotal * 0.035;
 
-    // Calculate security deposit - only for unverified users
+    const tax = subtotal * 0.035;
     const securityDeposit = !isVerified ? PRICING.securityDeposit : 0;
 
-    // Return all price components
+
     return {
         subtotal,
         tax,
@@ -54,20 +55,32 @@ const calculatePriceBreakdown = (rooms: BookingRoom[], bookingType: BookingType,
     };
 };
 
+
 const calculateTotalAmount = (bookingData: any) => {
     let subtotal = 0;
 
+
     bookingData.rooms.forEach((room: any) => {
         const timeSlot = room.timeSlot as TimeSlot;
+        let basePrice;
+
+
+        if (room.customPricing && room.customPricing[bookingData.bookingType]) {
+            basePrice = room.customPricing[bookingData.bookingType][timeSlot];
+        } else {
+            basePrice = PRICING[bookingData.bookingType][timeSlot];
+        }
+
 
         if (bookingData.bookingType === 'monthly') {
-            // Get unique months for this specific room
             const monthRanges = new Map<string, { start: number, end: number }>();
+
 
             room.dates.forEach((date: any) => {
                 const d = new Date(date.date || date);
                 const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
                 const dayOfMonth = d.getDate();
+
 
                 if (!monthRanges.has(monthKey)) {
                     monthRanges.set(monthKey, { start: dayOfMonth, end: dayOfMonth });
@@ -78,31 +91,41 @@ const calculateTotalAmount = (bookingData: any) => {
                 }
             });
 
-            // Calculate prorated charges for each month
+
             monthRanges.forEach((range, month) => {
                 const [year, monthNum] = month.split('-').map(Number);
                 const daysInMonth = new Date(year, monthNum + 1, 0).getDate();
                 const daysBooked = range.end - range.start + 1;
 
-                // If booking covers more than 15 days, charge full month
-                // Otherwise, prorate based on daily rate
+
                 if (daysBooked > 15) {
-                    subtotal += PRICING.monthly[timeSlot];
+                    subtotal += basePrice;
                 } else {
-                    const dailyRate = PRICING.daily[timeSlot];
+                    let dailyRate;
+                    if (room.customPricing && room.customPricing.daily) {
+                        dailyRate = room.customPricing.daily[timeSlot];
+                    } else {
+                        dailyRate = PRICING.daily[timeSlot];
+                    }
                     subtotal += dailyRate * daysBooked;
                 }
             });
         } else {
-            // For daily bookings
             const numberOfDates = room.dates.length;
-            const dailyRate = PRICING.daily[timeSlot];
+            let dailyRate;
+            if (room.customPricing && room.customPricing.daily) {
+                dailyRate = room.customPricing.daily[timeSlot];
+            } else {
+                dailyRate = PRICING.daily[timeSlot];
+            }
             subtotal += dailyRate * numberOfDates;
         }
     });
 
+
     const tax = subtotal * PRICING.tax;
     const total = subtotal + tax;
+
 
     return {
         subtotal,
@@ -313,6 +336,7 @@ const SummaryPage = () => {
             setBookingType(bookingData.bookingType);
 
             const isVerified = session?.user?.isVerified ?? false;
+            debugger
             const priceBreakdownData = calculatePriceBreakdown(
                 bookingData.rooms,
                 bookingData.bookingType,

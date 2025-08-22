@@ -233,7 +233,7 @@ const CalendarPage: React.FC = () => {
         const dateStr = formatDateToString(date);
         const room = selectedRooms.find(r => r.id === roomId);
         if (!room) return;
-
+        
         let updatedRooms = [...selectedRooms];
 
         // Handle monthly booking
@@ -302,6 +302,7 @@ const CalendarPage: React.FC = () => {
         const totalAmount = calculateTotalAmount(updatedRooms);
         const bookingData: BookingData = {
             rooms: updatedRooms.map(r => ({
+                ...r,
                 roomId: r.id.toString(),
                 name: r.name,
                 timeSlot: r.timeSlot,
@@ -735,11 +736,11 @@ const CalendarPage: React.FC = () => {
             if (hasInvalidDates) {
                 toast.error('Some selected dates are invalid. Please check your selection.');
                 return;
-            }
-            //qasim
+            }   
             // Format booking data
             const bookingData: BookingData = {
                 rooms: roomsWithDates.map(room => ({
+                    ...room,
                     roomId: room.id.toString(),
                     name: room.name,
                     timeSlot: room.timeSlot,

@@ -26,6 +26,7 @@ export interface BookingRoom {
     name: string;
     timeSlot: TimeSlot;
     dates: BookingDate[];
+    customPricing?:any
 }
 
 // Interface for booking data in session storage
@@ -36,6 +37,7 @@ export interface BookingData {
     isVerified?: boolean;
     priceBreakdown?: PriceBreakdown;
     includesSecurityDeposit?: boolean;
+    customPricing?:any
 }
 
 // Interface for booking status from API
